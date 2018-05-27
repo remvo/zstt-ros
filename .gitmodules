@@ -1,0 +1,3 @@
+[submodule "src/cv_camera"]
+	path = src/cv_camera
+	url = https://github.com/OTL/cv_camera.git
