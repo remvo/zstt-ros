@@ -6,6 +6,8 @@ name = "pypi"
 [dev-packages]
 
 [packages]
+opencv-python = "*"
+pylint = "*"
 
 [requires]
 python_version = "2.7"
