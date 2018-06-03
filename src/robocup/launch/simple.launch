@@ -1,0 +1,8 @@
+<launch>
+    <remap from="/cv_camera/image_raw" to="/image_raw" />
+
+    <node name="cv_camera" pkg="cv_camera" type="cv_camera_node" output="screen" />
+    <node name="image_converter" pkg="image_converter" type="image_converter.py" output="screen" />
+
+    <node name="object_detector" pkg="robocup" type="object_detector.py" output="screen" />
+</launch>
