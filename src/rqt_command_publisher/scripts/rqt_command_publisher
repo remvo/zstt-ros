@@ -1,0 +1,10 @@
+#!/usr/bin/env python
+
+import sys
+
+from rqt_command_publisher.command_publisher import CommandPublisher
+from rqt_gui.main import Main
+
+plugin = 'rqt_command_publisher'
+main = Main(filename=plugin)
+sys.exit(main.main(sys.argv, standalone=plugin))

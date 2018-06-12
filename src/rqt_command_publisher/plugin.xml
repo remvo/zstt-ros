@@ -1,0 +1,17 @@
+<library path="src">
+  <class name="ZSTT Command Publisher" type="rqt_command_publisher.command_publisher.CommandPublisher" base_class_type="rqt_gui_py::Plugin">
+    <description>
+      A Python GUI plugin publishing ZSTT ROS message.
+    </description>
+    <qtgui>
+      <group>
+        <label>Topics</label>
+        <icon type="theme">folder</icon>
+        <statustip>Plugins related to ROS topics.</statustip>
+      </group>
+      <label>ZSTT Command Publisher</label>
+      <icon type="theme">applications-engineering</icon>
+      <statustip>A Python GUI plugin for publishing ZSTT ROS messages.</statustip>
+    </qtgui>
+  </class>
+</library>

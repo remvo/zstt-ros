@@ -8,6 +8,8 @@ name = "pypi"
 [packages]
 opencv-python = "*"
 pylint = "*"
+rospkg = "*"
+catkin-pkg = "*"
 
 [requires]
 python_version = "2.7"
