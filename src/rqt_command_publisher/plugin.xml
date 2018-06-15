@@ -5,12 +5,12 @@
     </description>
     <qtgui>
       <group>
-        <label>Topics</label>
+        <label>ZSTT</label>
         <icon type="theme">folder</icon>
-        <statustip>Plugins related to ROS topics.</statustip>
+        <statustip>Plugins related to ZSTT.</statustip>
       </group>
-      <label>ZSTT Command Publisher</label>
-      <icon type="theme">applications-engineering</icon>
+      <label>Command Publisher</label>
+      <icon type="theme">media-playback-start</icon>
       <statustip>A Python GUI plugin for publishing ZSTT ROS messages.</statustip>
     </qtgui>
   </class>
