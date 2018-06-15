@@ -1,0 +1,12 @@
+uint8 players_per_team
+uint8 game_type
+uint8 game_state
+uint8 first_half
+uint8 kick_of_team
+uint8 secondary_state
+string secondary_state_info
+uint8 drop_in_team
+uint16 drop_in_time
+uint16 seconds_remaining
+uint16 secondary_seconds_remaining
+gamecontroller_msgs/TeamInfo[] teams_info

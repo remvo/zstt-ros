@@ -1,0 +1,4 @@
+uint8 penalty
+uint8 secs_till_unpenalised
+uint8 number_of_yellow_cards
+uint8 number_of_red_cards
