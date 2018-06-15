@@ -29,7 +29,7 @@ class CommandPublisherWidget(QWidget):
     _ui_file_path = os.path.join(rospkg.RosPack().get_path('rqt_command_publisher'),
                                  'resource',
                                  'CommandPublisher.ui')
-    _command_file_path = os.path.join(rospkg.RosPack().get_path('rqt_command_publisher'),
+    _command_file_path = os.path.join(rospkg.RosPack().get_path('zstt'),
                                       'resource',
                                       'command.yaml')
 
