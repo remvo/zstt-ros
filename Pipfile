@@ -10,6 +10,8 @@ opencv-python = "*"
 pylint = "*"
 rospkg = "*"
 catkin-pkg = "*"
+construct = "*"
+empy = "*"
 
 [requires]
 python_version = "2.7"
