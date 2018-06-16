@@ -50,3 +50,14 @@ RUN
 ---
 
 in progress...
+
+
+Trouble Shooting
+----------------
+
+* RQT Plugin does not listed...
+  - Remove rqt caching and retry
+  ```shell
+  $ rm ~/.config/ros.org/rqt_gui.ini
+  $ rqt
+  ```
