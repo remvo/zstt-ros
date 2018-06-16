@@ -7,7 +7,7 @@ import yaml
 from python_qt_binding import loadUi
 from python_qt_binding.QtCore import Signal, Slot
 from python_qt_binding.QtGui import QIcon
-from python_qt_binding.QtWidgets import QWidget
+from python_qt_binding.QtWidgets import QWidget, QTableWidget, QTableWidgetItem, QHeaderView
 
 import roslib
 import rosmsg
@@ -23,7 +23,7 @@ COMMAND_DATA_LENGTH = 14
 class CommandPublisherWidget(QWidget):
     start_publisher = Signal(str, str, float, object)
     stop_publisher = Signal()
-    # clean_up_publishers = Signal()
+    update_command_table = Signal(object)
 
     # Get path to UI file which should be in the "resource" folder of this package
     _ui_file_path = os.path.join(rospkg.RosPack().get_path('rqt_command_publisher'),
@@ -57,8 +57,6 @@ class CommandPublisherWidget(QWidget):
         self.refresh_combo_boxes()
         self.command_combo_box.currentTextChanged.connect(self.on_command_combo_box_changed)
 
-        # self.remove_publisher_button.clicked.connect(self.publisher_tree_widget.remove_selected_publishers)
-
     def shutdown_plugin(self):
         self._update_thread.kill()
 
@@ -87,6 +85,9 @@ class CommandPublisherWidget(QWidget):
 
         # update topic_combo_box
         self.topic_combo_box.setItems.emit(['/ctl_robot'])
+
+        # update command table
+        self.update_command_table.emit(commands)
 
     @Slot()
     def _update_finished(self):
@@ -127,10 +128,8 @@ class CommandPublisherWidget(QWidget):
 
     @Slot(str)
     def on_command_combo_box_changed(self, text):
-        rospy.loginfo(text)
         command = self.command_data.get('commands', {})
         command = command.get(str(text), [])
-        rospy.loginfo(command)
         self._set_command_spinbox_values(command)
 
     @Slot()
@@ -143,6 +142,8 @@ class CommandPublisherWidget(QWidget):
                 self.command_data['commands'][command_name] = new_data
                 yaml.dump(self.command_data, stream, explicit_start=True, encoding='utf-8')
                 rospy.loginfo('Success save command_data')
+                # update command table
+                self.update_command_table.emit(self.command_data['commands'])
         except:
             rospy.logerr('Error to save command_data')
 

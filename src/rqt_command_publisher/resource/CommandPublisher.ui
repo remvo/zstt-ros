@@ -439,29 +439,114 @@
     </layout>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_2"/>
-   </item>
-   <item>
-    <widget class="QTreeView" name="publisher_tree_widget">
-     <property name="contextMenuPolicy">
-      <enum>Qt::CustomContextMenu</enum>
-     </property>
-     <property name="toolTip">
-      <string>Right click on item or selection for more options.</string>
-     </property>
-     <property name="dragEnabled">
-      <bool>true</bool>
-     </property>
-     <property name="dragDropMode">
-      <enum>QAbstractItemView::DragOnly</enum>
-     </property>
-     <property name="selectionMode">
-      <enum>QAbstractItemView::ExtendedSelection</enum>
-     </property>
-     <property name="sortingEnabled">
-      <bool>true</bool>
-     </property>
-    </widget>
+    <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <item>
+      <widget class="QTableWidget" name="command_table_widget">
+       <property name="enabled">
+        <bool>true</bool>
+       </property>
+       <property name="editTriggers">
+        <set>QAbstractItemView::NoEditTriggers</set>
+       </property>
+       <property name="sortingEnabled">
+        <bool>true</bool>
+       </property>
+       <property name="rowCount">
+        <number>0</number>
+       </property>
+       <property name="columnCount">
+        <number>15</number>
+       </property>
+       <attribute name="horizontalHeaderCascadingSectionResizes">
+        <bool>false</bool>
+       </attribute>
+       <attribute name="horizontalHeaderDefaultSectionSize">
+        <number>63</number>
+       </attribute>
+       <attribute name="horizontalHeaderMinimumSectionSize">
+        <number>1</number>
+       </attribute>
+       <attribute name="horizontalHeaderStretchLastSection">
+        <bool>true</bool>
+       </attribute>
+       <column>
+        <property name="text">
+         <string>CMD</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>sel</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>strideL</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>strideR</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>spd</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>swingL</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>swingR</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>upL</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>upR</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>turnL</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>turnR</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>offsetL</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>offsetR</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>headLR</string>
+        </property>
+       </column>
+       <column>
+        <property name="text">
+         <string>headUP</string>
+        </property>
+       </column>
+      </widget>
+     </item>
+    </layout>
    </item>
   </layout>
  </widget>

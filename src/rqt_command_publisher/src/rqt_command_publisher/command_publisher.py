@@ -10,6 +10,7 @@ import roslib
 
 from qt_gui.plugin import Plugin
 from python_qt_binding.QtCore import Slot, QSignalMapper, QTimer
+from python_qt_binding.QtWidgets import QHeaderView, QTableWidgetItem
 
 from rqt_command_publisher.command_publisher_widget import CommandPublisherWidget
 
@@ -25,6 +26,7 @@ class CommandPublisher(Plugin):
         self._widget = CommandPublisherWidget()
         self._widget.start_publisher.connect(self.start_publisher)
         self._widget.stop_publisher.connect(self.clean_up_publishers)
+        self._widget.update_command_table.connect(self.update_command_table)
 
         # Show _widget.windowTitle on left-top of each plugin (when
         # it's set in _widget). This is useful when you open multiple
@@ -107,3 +109,17 @@ class CommandPublisher(Plugin):
     def shutdown_plugin(self):
         self._widget.shutdown_plugin()
         self.clean_up_publishers()
+
+    def update_command_table(self, commands):
+        table = self._widget.command_table_widget
+        table.setRowCount(len(commands))
+        for index, command in enumerate(sorted(commands.keys())):
+            table.setItem(index, 0, QTableWidgetItem(str(command)))
+            data = commands[command]
+            for i in range(len(data)):
+                table.setItem(index, i + 1, QTableWidgetItem(str(data[i])))
+
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        for i in range(1, len(header)):
+            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
