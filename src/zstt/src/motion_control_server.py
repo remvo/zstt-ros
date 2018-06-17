@@ -2,6 +2,7 @@
 from zstt.srv import MotionControl, MotionControlResponse
 import constants as c
 
+from std_msgs.msg import UInt16MultiArray
 import rospy
 import rospkg
 import os
@@ -13,6 +14,8 @@ NAME = 'motion_control_server'
 previous_command = None
 previous_data = None
 commands = {}
+
+pub = rospy.Publisher('/ctl_robot', UInt16MultiArray, queue_size=10)
 
 
 def get_command_from_file():
@@ -57,18 +60,18 @@ def generate_command(name, head_lr, head_ud, head_init):
 
 
 def handle_motion_control(req):
-    global commands, previous_command, previous_data
+    global pub, commands, previous_command, previous_data
 
     rospy.loginfo('Service: {}, {}, {}, {}, {}'.format(req.name, req.duration, req.head_lr, req.head_ud, req.head_init))
     if (req.name in commands.keys()):
         # If request command is different with previous one, we need to initWalk for 1 sec.
         if (req.name != previous_command):
             new_data = generate_command('init_walk', req.head_lr, req.head_ud, req.head_init)
-            # Todo: Send the data to serial
+            pub.publish(UInt16MultiArray(data=new_data))
             rospy.sleep(1)
 
         new_data = generate_command(req.name, req.head_lr, req.head_ud, req.head_init)
-        # Todo: Send the data to serial
+        pub.publish(UInt16MultiArray(data=new_data))
         if (req.duration > 0):
             rospy.sleep(req.duration)
 
