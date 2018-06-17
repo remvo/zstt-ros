@@ -142,7 +142,7 @@ class GameStateReceiver(object):
 
 
 def receiver():
-    rec = GameStateReceiver(team=47, player=1)
+    rec = GameStateReceiver(team=30, player=1)
     pub = rospy.Publisher('/robocup/gamecontroller_msgs', GameStateMsg, queue_size=10)
     rospy.init_node('gamecontroller_client', anonymous=False)
     rate = rospy.Rate(3)    # 3hz => 3 issues per sec
