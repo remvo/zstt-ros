@@ -10,6 +10,7 @@ from std_msgs.msg import String, Bool, Int32MultiArray, Float32MultiArray
 from sensor_msgs.msg import Image
 
 
+
 class ObjectDetector(object):
 
     def __init__(self):
@@ -20,6 +21,8 @@ class ObjectDetector(object):
 
         self.field = None
         self.field_mask = None
+
+        self.ball = None
 
         self.cv_sub = rospy.Subscriber('image_raw', Image, self.cv_callback)
         self.lab_sub = rospy.Subscriber('image_lab', Image, self.lab_callback)
@@ -73,8 +76,18 @@ class ObjectDetector(object):
         ##### STEP 4. FIND GOAL OBJECT
         self.find_goal()
 
-        #TODO SEND TOPIC : MERGE IMAGE (CONTOUR DISPLAY) 
-        
+        #TODO SEND TOPIC : MERGE IMAGE (CONTOUR DISPLAY)
+        view_image = self.cv_image.copy()
+
+        #if self.field is not None:
+        #    view_image = cv2.bitwise_and(view_image, view_image, mask=self.field)
+
+        #if self.ball is not None:
+        #    cv2.circle(view_image, self.ball[0], self.ball[1], (255, 255, 0), 2)
+
+        # TEST
+        # cv2.imshow('view_image', view_image)
+
         cv2.waitKey(3)
 
     def find_field(self):
@@ -129,7 +142,8 @@ class ObjectDetector(object):
                     self.field_mask = cv2.bitwise_and(self.lab_image.copy(), field_mask)
 
                     # TEST
-                    # cv2.imshow('FIELD', self.field_mask)
+                    cv2.imshow('FIELD', self.field_mask)
+                    # cv2.imshow('FIELD', cv2.bitwise_and(self.cv_image.copy(), field_mask))
 
                     self.field_pub.publish(True)
         except CvBridgeError as error:
@@ -169,7 +183,7 @@ class ObjectDetector(object):
         b_image = cv2.bitwise_and(image, image, mask=b_mask)
 
         # TEST
-        # cv2.imshow('BALL', b_image)
+        cv2.imshow('BALL', b_image)
 
         # bilateralFilter Parameters
         d = rospy.get_param('/detector/option/filter_d', 9)
@@ -205,10 +219,13 @@ class ObjectDetector(object):
 
         if ball is None:
             #rospy.loginfo("***** NO BALL *****")
+            self.ball = None
             self.ball_pub.publish(obj_ball)
 
         else:
-            (x, y), radius = ball_to_int(ball)
+            self.ball = ball_to_int(ball)
+
+            (x, y), radius = self.ball
             
             obj_ball.data = [x, y, radius]
 
@@ -279,16 +296,23 @@ class ObjectDetector(object):
 
                 if len(goal_post) == 2:
                     #rospy.loginfo(goal_post)
-                    (x1, y1), point1 = goal_post[0]
-                    (x2, y2), point2 = goal_post[0]
-                    obj_goal.data = [x1, y1, point1, x2, y2, point2]
+                    #(x1, y1), point1 = goal_post[0]
+                    #(x2, y2), point2 = goal_post[1]
+                    #obj_goal.data = [x1, y1, point1, x2, y2, point2]
                     break
+
+            if len(goal_post) > 0:
+                (x1, y1), point1 = goal_post[0] 
+                obj_goal.data[0], obj_goal.data[1], obj_goal.data[2] = x1, y1, point1
+
+            if len(goal_post) > 1:
+                (x2, y2), point2 = goal_post[1]
+                obj_goal.data[3], obj_goal.data[4], obj_goal.data[5] = x2, y2, point2
 
             #rospy.loginfo("%%%%% GOAL POST %%%%%")
             #rospy.loginfo(obj_goal)
 
             self.goal_pub.publish(obj_goal)
-
 
     def dynamic_setting(self):
         # FIELD MASK LOWER
