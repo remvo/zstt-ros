@@ -1,0 +1,5 @@
+<launch>
+    <remap from="/cv_camera/image_raw" to="/image_raw" />
+
+    <node name="motion_control_server" pkg="zstt" type="motion_control_server.py" output="screen" />
+</launch>
