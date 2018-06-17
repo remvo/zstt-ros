@@ -77,7 +77,7 @@ class CommandPublisher(Plugin):
         try:
             publisher_info['publisher'] = rospy.Publisher(publisher_info['topic_name'],
                                                           type(publisher_info['message_instance']),
-                                                          queue_size=100)
+                                                          queue_size=10)
         except TypeError:
             publisher_info['publisher'] = rospy.Publisher(publisher_info['topic_name'],
                                                           type(publisher_info['message_instance']))
