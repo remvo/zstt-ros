@@ -33,35 +33,47 @@ def get_command_from_file():
         commands = {}
 
 
+def generate_command(name, head_lr, head_up, head_init):
+    global commands, previous_data
+
+    # using initial values from file
+    new_data = list(commands[name])
+
+    if (head_init):
+        return new_data
+
+    # using values from previous command
+    if (previous_data):
+        new_data[c.HEAD_LEFT_RIGHT] = previous_data[c.HEAD_LEFT_RIGHT]
+        new_data[c.HEAD_UP_DOWN] = previous_data[c.HEAD_UP_DOWN]
+
+    # using new values from caller
+    if (head_lr >= 0):
+        new_data[c.HEAD_LEFT_RIGHT] = head_lr
+    if (head_ud >= 0):
+        new_data[c.HEAD_UP_DOWN] = head_ud
+
+    return new_data
+
+
 def handle_motion_control(req):
     global commands, previous_command, previous_data
 
-    rospy.loginfo('Service: {}, {}, {}, {}, {}'.format(
-        req.name, req.duration, req.head_lr, req.head_ud, req.head_init))
+    rospy.loginfo('Service: {}, {}, {}, {}, {}'.format(req.name, req.duration, req.head_lr, req.head_ud, req.head_init))
     if (req.name in commands.keys()):
-        # using initial values from file
-        new_data = list(commands[req.name])
+        # If request command is different with previous one, we need to initWalk for 1 sec.
+        if (req.name != previous_command):
+            new_data = generate_command('initWalk', req.head_lr, req.head_up, req.head_init)
+            # Todo: Send the data to serial
+            rospy.sleep(1)
 
-        if (not req.head_init):
-            # using values from previous command
-            if (previous_data):
-                new_data[c.HEAD_LEFT_RIGHT] = previous_data[c.HEAD_LEFT_RIGHT]
-                new_data[c.HEAD_UP_DOWN] = previous_data[c.HEAD_UP_DOWN]
-
-            # using new values from caller
-            if (req.head_lr >= 0):
-                new_data[c.HEAD_LEFT_RIGHT] = req.head_lr
-            if (req.head_ud >= 0):
-                new_data[c.HEAD_UP_DOWN] = req.head_ud
-
-        previous_command = req.name
-        previous_data = new_data
-
-        # Todo: If request command is different with previous one, we need to initWalk for 1 sec.
+        new_data = generate_command(req.name, req.head_lr, req.head_up, req.head_init)
         # Todo: Send the data to serial
         if (req.duration > 0):
             rospy.sleep(req.duration)
 
+        previous_command = req.name
+        previous_data = new_data
         return MotionControlResponse(new_data)
     else:
         return MotionControlResponse([])
