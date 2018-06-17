@@ -1,4 +1,5 @@
 string name
+int16 duration
 int16 head_lr
 int16 head_ud
 bool head_init

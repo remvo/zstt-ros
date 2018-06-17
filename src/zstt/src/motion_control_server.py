@@ -11,6 +11,7 @@ NAME = 'motion_control_server'
 
 
 previous_command = None
+previous_data = None
 commands = {}
 
 
@@ -33,30 +34,34 @@ def get_command_from_file():
 
 
 def handle_motion_control(req):
-    global commands, previous_command
+    global commands, previous_command, previous_data
 
-    rospy.loginfo('Service: {}, {}, {}, {}'.format(
-        req.name, req.head_lr, req.head_ud, req.head_init))
+    rospy.loginfo('Service: {}, {}, {}, {}, {}'.format(
+        req.name, req.duration, req.head_lr, req.head_ud, req.head_init))
     if (req.name in commands.keys()):
+        # using initial values from file
         new_data = list(commands[req.name])
 
-        # using initial values from file
-        if (req.head_init):
-            previous_command = new_data
-            return MotionControlResponse(new_data)
-        
-        # using values from previous command
-        if (previous_command):
-            new_data[c.HEAD_LEFT_RIGHT] = previous_command[c.HEAD_LEFT_RIGHT]
-            new_data[c.HEAD_UP_DOWN] = previous_command[c.HEAD_UP_DOWN]
+        if (not req.head_init):
+            # using values from previous command
+            if (previous_data):
+                new_data[c.HEAD_LEFT_RIGHT] = previous_data[c.HEAD_LEFT_RIGHT]
+                new_data[c.HEAD_UP_DOWN] = previous_data[c.HEAD_UP_DOWN]
 
-        # using new values from caller
-        if (req.head_lr >= 0):
-            new_data[c.HEAD_LEFT_RIGHT] = req.head_lr
-        if (req.head_ud >= 0):
-            new_data[c.HEAD_UP_DOWN] = req.head_ud
+            # using new values from caller
+            if (req.head_lr >= 0):
+                new_data[c.HEAD_LEFT_RIGHT] = req.head_lr
+            if (req.head_ud >= 0):
+                new_data[c.HEAD_UP_DOWN] = req.head_ud
 
-        previous_command = new_data
+        previous_command = req.name
+        previous_data = new_data
+
+        # Todo: If request command is different with previous one, we need to initWalk for 1 sec.
+        # Todo: Send the data to serial
+        if (req.duration > 0):
+            rospy.sleep(req.duration)
+
         return MotionControlResponse(new_data)
     else:
         return MotionControlResponse([])
