@@ -14,6 +14,7 @@ from std_msgs.msg import Bool, Float32MultiArray, Int32MultiArray, String
 class ObjectDetector(object):
 
     def __init__(self):
+        self.view_output = rospy.get_param('/detector/view_output', True)
         self.bridge = CvBridge()
 
         self.cv_image = None
@@ -32,8 +33,10 @@ class ObjectDetector(object):
         # ROS Topic Publishers
         try:
             self.field_pub = rospy.Publisher('field_pub', Bool, queue_size=5)
-            self.ball_pub = rospy.Publisher('ball_pub', Int32MultiArray, queue_size=5)
-            self.goal_pub = rospy.Publisher('goal_pub', Float32MultiArray, queue_size=5)
+            self.ball_pub = rospy.Publisher(
+                'ball_pub', Int32MultiArray, queue_size=5)
+            self.goal_pub = rospy.Publisher(
+                'goal_pub', Float32MultiArray, queue_size=5)
         except TypeError:
             self.field_pub = rospy.Publisher('field_pub', Bool)
             self.ball_pub = rospy.Publisher('ball_pub', Int32MultiArray)
@@ -50,29 +53,28 @@ class ObjectDetector(object):
 
     def cv_callback(self, image_message):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(
+            self.cv_image = self.bridge.imgmsg_to_cv2(
                 image_message, desired_encoding='passthrough')
+            self.view_image = self.cv_image.copy()
         except CvBridgeError as error:
             rospy.logerr(error)
-
-        self.cv_image = cv_image
-
-        # cv2.waitKey(3)
 
     def lab_callback(self, image_message):
         try:
-            lab_image = self.bridge.imgmsg_to_cv2(
+            self.lab_image = self.bridge.imgmsg_to_cv2(
                 image_message, desired_encoding='passthrough')
+            self.work()
         except CvBridgeError as error:
             rospy.logerr(error)
 
+    def work(self):
         # TODO MOVE BLUR TO CONVERT
 
         # DYNAMIC RECONFIGURE _ BLUR AMOUNT
-        blur = rospy.get_param('/detector/option/blur', 5)
+        # blur = rospy.get_param('/detector/option/blur', 5)
 
         # SAVE LAB IMAGE WITH BLUR
-        self.lab_image = cv2.GaussianBlur(lab_image.copy(), (blur, blur), 0)
+        # self.lab_image = cv2.GaussianBlur(lab_image.copy(), (blur, blur), 0)
 
         # STEP 1. GET MASK COLOR FROM DYNAMIC RECONFIGURE SETTING
         self.dynamic_setting()
@@ -81,26 +83,40 @@ class ObjectDetector(object):
         self.find_field()
 
         # STEP 3. FIND BALL OBJECT
-        self.find_ball()
+        # self.find_ball()
 
         # STEP 4. FIND GOAL OBJECT
-        self.find_goal()
+        # self.find_goal()
 
         # TODO SEND TOPIC : MERGE IMAGE (CONTOUR DISPLAY)
 
-        if self.field is not None:
-            if self.ball is not None:
-                cv2.circle(self.view_image,
-                           self.ball[0], self.ball[1], (255, 255, 0), 2)
-            # if self.goal is not None:
-            # TODO
+        # if self.field is not None:
+        #     if self.ball is not None:
+        #         cv2.circle(self.view_image,
+        #                    self.ball[0], self.ball[1], (255, 255, 0), 2)
+        #     # if self.goal is not None:
+        #     # TODO
 
-            # TEST
-            cv2.imshow('view_image', self.view_image)
+        #     # TEST
+        #     cv2.imshow('view_image', self.view_image)
 
-        cv2.waitKey(3)
+        if self.view_output and self.view_image is not None:
+            cv2.imshow('VIEW', self.view_image)
+            cv2.waitKey(3)
 
     def find_field(self):
+        """Detect filed from the image."""
+        def return_fail():
+            self.field = None
+            self.field_mask = None
+            self.field_pub.publish(False)
+            return
+
+        if self.lab_image is None:
+            return return_fail()
+
+        blur = rospy.get_param('/detector/option/blur', 5)
+        lab_image = cv2.GaussianBlur(self.lab_image.copy(), (blur, blur), 0)
 
         # STEP 2-1. GET MASK VALUE
         lower = np.array(self.field_lab['lower'])
@@ -109,60 +125,49 @@ class ObjectDetector(object):
         # STEP 2-2. SET MASK TO LAB_IMAGE
         # construct a mask for the color between lower and upper, then perform
         # a series of dilations and erosions to remove any small blobs left in the mask
-        f_mask = cv2.inRange(self.lab_image.copy(), lower, upper)
+        f_mask = cv2.inRange(lab_image, lower, upper)
         f_mask = cv2.erode(f_mask, None, iterations=2)
         f_mask = cv2.dilate(f_mask, None, iterations=2)
 
         # TEST
         # cv2.imshow('TEST', cv2.bitwise_and(self.cv_image, self.cv_image, mask=f_mask))
+        # cv2.waitKey(3)
 
         # STEP 2-3. FIND FILED CONTOUR
         # find contours in the mask and initialize the current center of the field
         # we need to using copy, because findContours function modify the input image
-        contour = cv2.findContours(
-            f_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        contours = cv2.findContours(
+            f_mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
-        try:
-            # only proceed if at least one contour was found
-            if len(contour) <= 0:
-                self.field_mask = None
-                self.field_pub.publish(False)
-            else:
-                min_field = rospy.get_param('/detector/option/min_field', 100)
+        # only proceed if at least one contour was found
+        if len(contours) <= 0:
+            return return_fail()
 
-                # STEP 2-4. MERGE CONTOUR AND FIND LARGEST ONE
+        # STEP 2-4. MERGE CONTOUR AND FIND LARGEST ONE
+        # merge closed contours
+        contours = merge_contours(contours)
 
-                # merge closed contours
-                contour = merge_contours(contour)
+        # return the largest contour in the mask
+        max_contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(max_contour) < rospy.get_param('/detector/option/min_field', 100):
+            return return_fail()
 
-                # return the largest contour in the mask
-                max_contour = max(contour, key=cv2.contourArea)
+        # Field!
+        self.field = cv2.convexHull(max_contour)
 
-                if cv2.contourArea(max_contour) < min_field:
-                    self.field_mask = None
-                    self.field_pub.publish(False)
-                else:
-                    self.field = cv2.convexHull(max_contour)
+        # SETP 2-5. FILL BLACK COLOR TO NON-FIELD AREA
+        self.field_mask = np.zeros(self.lab_image.shape, dtype=np.uint8)
+        cv2.fillPoly(self.field_mask, [self.field], (255,) * self.lab_image.shape[2])
 
-                    field_mask = np.zeros(self.lab_image.shape, dtype=np.uint8)
+        # draw field outline
+        if self.view_output:
+            cv2.polylines(self.view_image, [self.field], True, (0, 255, 0), 4)
 
-                    # SETP 2-5. FILL BLACK COLOR TO NON-FIELD AREA
-                    cv2.fillPoly(field_mask, [self.field],
-                                 (255,) * self.lab_image.shape[2])
+        # TEST
+        # cv2.imshow('FIELD', self.field_mask)
+        # cv2.imshow('FIELD', cv2.bitwise_and(self.cv_image.copy(), field_mask))
 
-                    # SET MASK IMAGE FOR FINDING BALL
-                    self.field_mask = cv2.bitwise_and(
-                        self.lab_image.copy(), field_mask)
-                    self.view_image = cv2.bitwise_and(
-                        self.cv_image.copy(), field_mask)
-
-                    # TEST
-                    # cv2.imshow('FIELD', self.field_mask)
-                    # cv2.imshow('FIELD', cv2.bitwise_and(self.cv_image.copy(), field_mask))
-
-                    self.field_pub.publish(True)
-        except CvBridgeError as error:
-            rospy.logerr(e)
+        self.field_pub.publish(True)
 
     def find_ball(self):
 
@@ -481,6 +486,7 @@ def merge_contours_sub(cnts):
                 cnts.pop(j)
                 cnts.pop(i)
                 return cnts, True
+
     return cnts, False
 
 
