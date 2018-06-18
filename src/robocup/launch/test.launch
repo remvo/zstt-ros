@@ -2,7 +2,9 @@
     <node name="image_converter" pkg="image_converter" type="image_converter.py" output="screen" />
     <node name="test_image_publisher" pkg="robocup" type="test_image_publisher.py" output="screen" />
     <node name="object_detector" pkg="robocup" type="object_detector.py" output="screen" />
-    <!-- <node name="state_controller" pkg="robocup" type="state_controller.py" output="screen" /> -->
+    <node name="state_controller" pkg="robocup" type="state_controller.py" output="screen" />
+    <node name="motion_controller" pkg="zstt" type="motion_control_server.py" output="screen" />
+    <node name="gamecontroller_receiver" pkg="gamecontroller_msgs" type="receiver.py" output="screen" />
 
     <group ns="detector">
         <node name="field_color" pkg="robocup" type="field_color.py" />
