@@ -57,14 +57,14 @@ class ObjectDetector(object):
         # ROS Topic Publishers
         try:
             self.field_pub = rospy.Publisher('field_pub', Bool, queue_size=5)
-            self.ball_pub = rospy.Publisher(
-                'ball_pub', Int32MultiArray, queue_size=5)
-            self.goal_pub = rospy.Publisher(
-                'goal_pub', Float32MultiArray, queue_size=5)
+            self.ball_pub = rospy.Publisher('ball_pub', Int32MultiArray, queue_size=5)
+            self.goal_pub = rospy.Publisher('goal_pub', Float32MultiArray, queue_size=5)
+            self.preview_pub = rospy.Publisher('preview_img', Image, queue_size=5)
         except TypeError:
             self.field_pub = rospy.Publisher('field_pub', Bool)
             self.ball_pub = rospy.Publisher('ball_pub', Int32MultiArray)
             self.goal_pub = rospy.Publisher('goal_pub', Float32MultiArray)
+            self.preview_pub = rospy.Publisher('preview_img', Image)
 
         # INIT MASK COLORS
         self.field_lab = {'upper': [], 'lower': []}
@@ -92,14 +92,6 @@ class ObjectDetector(object):
             rospy.logerr(error)
 
     def work(self):
-        # TODO MOVE BLUR TO CONVERT
-
-        # DYNAMIC RECONFIGURE _ BLUR AMOUNT
-        # blur = rospy.get_param('/detector/option/blur', 5)
-
-        # SAVE LAB IMAGE WITH BLUR
-        # self.lab_image = cv2.GaussianBlur(lab_image.copy(), (blur, blur), 0)
-
         # STEP 1. GET MASK COLOR FROM DYNAMIC RECONFIGURE SETTING
         self.dynamic_setting()
 
@@ -112,11 +104,14 @@ class ObjectDetector(object):
         # STEP 4. FIND GOAL OBJECT
         self.find_goal()
 
-        # TODO SEND TOPIC : MERGE IMAGE (CONTOUR DISPLAY)
-
         if self.view_output and self.view_image is not None:
-            cv2.imshow('VIEW', self.view_image)
-            cv2.waitKey(3)
+            # cv2.imshow('VIEW', self.view_image)
+            # cv2.waitKey(3)
+            try:
+                msg = self.bridge.cv2_to_imgmsg(self.view_image, 'bgr8')
+                self.preview_pub.publish(msg)
+            except CvBridgeError as error:
+                rospy.logerr(error)
 
     def find_field(self):
         """Detect filed from the image."""
