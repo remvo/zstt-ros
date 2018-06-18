@@ -1,0 +1,13 @@
+<launch>
+    <node name="image_converter" pkg="image_converter" type="image_converter.py" output="screen" />
+    <node name="test_image_publisher" pkg="robocup" type="test_image_publisher.py" output="screen" />
+    <node name="object_detector" pkg="robocup" type="object_detector.py" output="screen" />
+    <!-- <node name="state_controller" pkg="robocup" type="state_controller.py" output="screen" /> -->
+
+    <group ns="detector">
+        <node name="field_color" pkg="robocup" type="field_color.py" />
+        <node name="ball_color" pkg="robocup" type="ball_color.py" />
+        <node name="goal_color" pkg="robocup" type="goal_color.py" />
+        <node name="option" pkg="robocup" type="option.py" />
+    </group>
+</launch>
