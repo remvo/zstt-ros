@@ -8,11 +8,11 @@ from cv_bridge import CvBridge, CvBridgeError
 from gamecontroller_msgs.msg import GameState as GameStateMsg
 from gamecontroller_msgs.msg import Data, Header, RobotInfo, TeamInfo
 from sensor_msgs.msg import Image
-from std_msgs.msg import (Bool, Float32MultiArray, Int32, Int32MultiArray,
-                          String, UInt8)
-from zstt import *
+from std_msgs.msg import (Bool, Float32MultiArray, Int32, Int32MultiArray, String, UInt8)
 from zstt.srv import MotionControl
 
+import gc_constants
+import zstt_constants
 from object_detector import angle_between_three_points, midpoint
 
 # TODO SET DISTANCE
@@ -50,14 +50,6 @@ DISTANCE = {
           (360, 10),
           (410, 0)]
 }
-
-
-class GameState(Enum):
-    STATE_INITIAL = 0
-    STATE_READY = 1
-    STATE_SET = 2
-    STATE_PLAYING = 3
-    STATE_FINISHED = 4
 
 
 class SecondaryState(Enum):
@@ -98,23 +90,19 @@ class Penalties(Enum):
 class StateController(object):
 
     def __init__(self):
-
-        self.game_sub = rospy.Subscriber(
-            '/robocup/gamecontroller_msgs', Int32, self.game_callback)
-
-        self.game_state = -1
+        # GameController Data
+        self.game_sub = rospy.Subscriber('/robocup/gamecontroller_msgs', GameStateMsg, self.game_callback)
+        self.game_contorller = None
         self.second_state = -1
         self.play_state = -1
         self.play_step = -1
 
-        self.sensor_sub = rospy.Subscriber(
-            '/dataMsg', UInt8, self.sensor_callback)
+        # Sensor Data
+        self.sensor_sub = rospy.Subscriber('/dataMsg', UInt8, self.sensor_callback)
         self.sensor_count = 0
-
         self.yaw = -1
         self.pitch = 0
         self.roll = 0
-
         self.base_yaw = -1
         self.target_yaw = -1
 
@@ -122,11 +110,9 @@ class StateController(object):
         self.cv_image = None
         self.bridge = CvBridge()
 
-        self.field_sub = rospy.Subscriber('field_pub', Bool, self.set_state)
-        self.ball_sub = rospy.Subscriber(
-            'ball_pub', Int32MultiArray, self.ball_callback)
-        self.goal_sub = rospy.Subscriber(
-            'goal_pub', Float32MultiArray, self.goal_callback)
+        self.field_sub = rospy.Subscriber('field_pub', Bool, self.field_callback)
+        self.ball_sub = rospy.Subscriber('ball_pub', Int32MultiArray, self.ball_callback)
+        self.goal_sub = rospy.Subscriber('goal_pub', Float32MultiArray, self.goal_callback)
 
         self.field = None
 
@@ -134,7 +120,7 @@ class StateController(object):
         self.ball_distance = -1
         self.ball_angle = 0
 
-        self.goal = None
+        self.goal_posts = None
         self.goal_target = None
 
         # TODO GET ANGLE TERM FROM RECONFIURE
@@ -157,20 +143,18 @@ class StateController(object):
         # 12 13 HEAD_LEFT_RIGHT / HEAD_UP_DOWN
         self.motion = []
 
-        self.is_running = False
-        self.get_ready = False
+        # Varaiabled for each game state
+        self.init_state()
 
     def sensor_callback(self, value):
-
+        # ??? sensor_count ???
         if value == 255:
             self.sensor_count = 0
         elif sensor_count == 0:
             self.sensor_count = 1
             self.yaw = value
-
             if self.base_yaw == -1:
                 self.base_yaw = value
-
         elif sensor_count == 1:
             self.sensor_count = 2
             self.pitch = value
@@ -182,318 +166,244 @@ class StateController(object):
 
     def cv_callback(self, image):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(
-                image, desired_encoding='passthrough')
+            self.cv_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='passthrough')
         except CvBridgeError as error:
             rospy.logerr(error)
 
-        self.cv_image = cv_image
-
-    def game_callback(self, message):
-        self.game_state = message
+    def game_callback(self, msg):
+        self.game_contorller = msg.data
+        self.work()
 
     def field_callback(self, msg):
-        # TRUE OR FALSE
         self.field = msg
 
     def ball_callback(self, msg):
-
-        # rospy.loginfo(msg)
-
-        if len(msg.data) != 0:
-            self.ball = ((msg.data[0], msg.data[1]), msg.data[2])
-            rospy.loginfo("%%%%%%%%%% BALL ")
-            rospy.loginfo(self.ball)
-        else:
+        if len(msg.data) < 3:
             self.ball = None
+            return
+        self.ball = ((msg.data[0], msg.data[1]), msg.data[2])
 
     def goal_callback(self, msg):
+        if len(msg.data) < 3:
+            self.goal_posts = None
+            return
+        
+        self.goal_posts = []
+        goal_post = (msg.data[0], msg.data[1]), msg.data[2]
+        self.goal_posts.append(goal_post)
+        if len(msg.data) >= 6:
+            goal_post = (msg.data[3], msg.data[4]), msg.data[5]
+            self.goal_posts.append(goal_post)
 
-        # rospy.loginfo(msg)
+    def work(self):
+        if self.game_contorller is None:
+            return
 
-        if len(msg.data) != 0:
-            if len(msg.data) > 2:
-                self.goal[0] = ((msg.data[0], msg.data[1]), msg.data[2])
-            if len(msg.data) > 5:
-                self.goal[1] = ((msg.data[3], msg.data[4]), msg.data[5])
-            rospy.loginfo("********** GOAL ")
-            rospy.loginfo(self.goal)
+        # INITIAL
+        if self.game_contorller.game_state == gc_constants.State.INITIAL.value:
+            self.do_initial()
+
+        # READY
+        elif self.game_contorller.game_state == gc_constants.State.READY.value:
+            self.do_ready()
+
+        # SET
+        elif self.game_contorller.game_state == gc_constants.State.SET.value:
+            self.do_set()
+
+        # PLAYING
+        elif self.game_contorller.game_state == gc_constants.State.PLAYING.value:
+            rospy.loginfo(gc_constants.State.PLAYING.name)
+
+        # FINISHED
+        elif self.game_contorller.game_state == gc_constants.State.FINISHED.value:
+            self.do_finish()
+
         else:
-            self.goal = None
+            rospy.loginfo(self.game_contorller.game_state)
+
+    def init_state(self):
+        # Varaiabled for each game state
+        self.ready_doing = False
+        self.ready_done = False
+
+        self.last_command = None
+        self.last_data = None
+
+        # Head info.
+        self.move_up_down = 0
+        self.move_left_right = -1
+
+        # Ball info.
+        self.ball = None
+        self.ball_distance = -1
+        self.ball_angle = 0
+
+    # INITIAL_STATE: INITIATE VARIABLES
+    def do_initial(self):
+        self.init_state()
+
+        # self.play_step = 1
+        # self.play_state = PlayState.PS_FIELD
+
+    # READY STATE: START FROM SIDE AND MOVE TO CENTER
+    def do_ready(self):
+        if not self.ready_done and not self.ready_doing:
+            self.ready_doing = True
+            self.last_command = 'forward'
+            self.last_data = motion_control_client('forward', 2)
+
+        self.ready_done = True
+
+    # SET STATE: FIND BALL USING HEAD MOVING ONLY
+    def do_set(self):
+        self.did_ready = False
+        self.doing_ready = False
+
+        # If we already found the ball, do nothinig
+        if self.ball is None:
+            self.head_move_to_find_ball()
+        else:
+            self.calc_ball_distance_angle()
+
+    # FINISHED STATE
+    def do_finish(self):
+        motion_control_client('stop')
 
     def set_state(self, msg):
+        # STATE_SET : FIND BALL USING HEAD MOVING ONLY
 
-        if self.is_running == True:
-            return
-        else:
-            self.is_running == True
-
-        while is_running:
-
-            # INITIALIZE VARIABLE IN ALL LOOP
-            motion = None
-
+        if self.game_state == GameState.STATE_PLAYING:
             """
-            state, time = self.rec.get_last_state()
-            game_state, secondary_state = self.rec.get_game_state()
-            self.head_counter -= 1
-            self.turn_counter -= 1
+            self.mode = GameState.STATE_PLAYING
+            self.did_ready = False
+            self.doing_ready = False
 
-            if self.source == Source.VIDEO:
-                # capture frame-by-frame (frame is BGR format)
-                (grabbed, frame) = video.read()
-
-                # if we are viewing a video and we did not grab a frame,
-                # then we have reached the end of the video
-                if not grabbed or frame is None:
+            for team in state.teams:
+                if team.team_number == settings.TEAM_NUMBER:
+                    if team.players[0].penalty != Penalties.NONE.name:
+                        if not self.doing_penalty:
+                            print('Penalty: {} ({}sec)'.format(team.players[0].penalty,
+                                                                team.players[0].secs_till_unpenalised))
+                            self.doing_penalty = True
+                            self.action.do_stop()
+                    elif self.doing_penalty:
+                        print('End of Penalty: Re-enter to field!')
+                        self.doing_penalty = False
+                        # go forward during 10 seconds
+                        self.action.do_forward(delay=7)
                     break
-
-            elif self.source == Source.WEBCAM:
-                (grabbed, frame) = camera.read()
-
-                if not grabbed:
-                    continue
-
-            # resize the frame, blur it, and convert it to the HSV color space
-            frame = imutils.resize(frame, width=settings.IMAGE_WIDTH)
-            self.display_frame = frame.copy()
             """
 
-            # STATE_INITIAL
-            if self.game_state == GameState.STATE_INITIAL:
+            # TODO IF PANELTY // STOP
 
-                """
-                self.mode = GameState.STATE_INITIAL
-                self.did_ready = False
-                self.doing_ready = False
-                """
+            if self.play_step == 1:
 
-                # INITIALIZE VARIABLE FOR PLAYING
-                self.play_step = 1
-                self.play_state = PlayState.PS_FIELD
+                # STEP 1-1. FIND FIELD
+                if self.play_state == PlayState.PS_FIELD:
+                    if self.field == True:
+                        self.play_state = PlayState.PS_BALL
 
-            # STATE_READY : START FROM SIDE AND MOVE TO CENTER
-            if self.game_state == GameState.STATE_READY:
+                        # INIT HEAD BEFORE NEXT STATE
+                        motion = ['stop', -1, -1, True]
+                    else:
+                        motion = self.find_object()
 
-                """
-                self.mode = GameState.STATE_READY
+                # STEP 1-2. FIND BALL
+                elif self.play_state == PlayState.PS_BALL:
+                    # empty check
+                    if self.BALL is not None:
+                        self.play_state = PlayState.PS_BALL_IN_LINE
 
-                # initialize some variable
-                self.ball_ready = False
-                self.all_ready = False
+                        # INIT HEAD BEFORE NEXT STATE
+                        motion = ['stop', -1, -1, True]
+                    else:
+                        motion = self.find_object()
 
-                if not self.doing_ready and not self.did_ready:
-                    self.doing_ready = True
-                    self.did_ready = False
+                # STEP 1-3. ADJUST ANGLE BETWEEN ROBOT AND BALL
+                elif self.play_state == PlayState.PS_BALL_IN_LINE:
 
-                    rc = self.action.do_ready()
-                    self.did_ready = True if rc else False
-                    self.doing_ready = False if rc else False
-                """
+                    # GET ANGLE AND DISTANCE OF BALL
+                    self.calc_ball_distance_angle()
 
-                if self.get_ready == False:
-                    self.get_ready = True
+                    turn = self.ball_in_line()
 
-                    # TODO CHECK WALKING TIME
-                    motion = ['forward', 22]
+                    if turn is None:
+                        self.play_state = PlayState.PS_BALL_DISTANCE
+                    elif turn == 'L':
+                        motion = ['turnLeft', 3]
+                    elif turn == 'R':
+                        motion = ['turnRight', 3]
 
-            # STATE_SET : FIND BALL USING HEAD MOVING ONLY
-            if self.game_state == GameState.STATE_SET:
-                """
-                self.mode = GameState.STATE_SET
-                self.did_ready = False
-                self.doing_ready = False
+                # STEP 1-4. ADJUST DISTANCE BETWEEN ROBOT AND BALL
+                elif self.play_state == PlayState.PS_BALL_DISTANCE:
 
-                # FIND FIELD
-                self.field = detect_field(frame)
+                    # GET ANGLE AND DISTANCE OF BALL
+                    self.calc_ball_distance_angle()
 
-                # FIND BALL IN FIELD
-                self.ball = None
-                if self.field is not None:
+                    close_distance = rospy.get_param(
+                        '/detector/option/min_to_forward', 150)
 
-                    # FILL BLACK COLOR TO NON-FIELD AREA
-                    mask = np.zeros(frame.shape, dtype=np.uint8)
-                    channel_count = frame.shape[2]  # i.e. 3 or 4 depending on your image
-                    ignore_mask_color = (255,) * channel_count
-                    cv2.fillPoly(mask, [self.field], ignore_mask_color)
-                    field_image = cv2.bitwise_and(frame, mask)
+                    if self.ball_distance > close_distance:
+                        motion = ['forward', 3]
+                    else:
+                        self.play_state = PlayState.PS_GOAL
+                        self.play_step = 2
 
-                    # FIND_BALL
-                    self.ball, self.ball_detect_method = detect_ball(field_image, self.action.head_up_down)
+            elif self.play_step == 2:
 
-                if self.ball is None:
-                    self.head_move_to_find_ball()
-                else:
-                    self.calc_ball_distance_angle(frame)
-                """
+                # STEP 2-1. FIND GOAL
+                if self.play_state == PlayState.PS_GOAL:
 
-                motion = self.find_object()
+                    if self.goal is not None:
+                        self.play_state = PlayState.PS_GOAL_IN_LINE
 
-            if self.game_state == GameState.STATE_PLAYING:
-                """
-                self.mode = GameState.STATE_PLAYING
-                self.did_ready = False
-                self.doing_ready = False
+                        if len(self.goal_post) > 1:
+                            self.goal_target = midpoint(
+                                list(self.goal_post)[0][0], list(self.goal_post)[1][0])
+                        elif len(self.goal_post) > 0:
+                            self.goal_target = list(self.goal_post)[0][0]
 
-                for team in state.teams:
-                    if team.team_number == settings.TEAM_NUMBER:
-                        if team.players[0].penalty != Penalties.NONE.name:
-                            if not self.doing_penalty:
-                                print('Penalty: {} ({}sec)'.format(team.players[0].penalty,
-                                                                   team.players[0].secs_till_unpenalised))
-                                self.doing_penalty = True
-                                self.action.do_stop()
-                        elif self.doing_penalty:
-                            print('End of Penalty: Re-enter to field!')
-                            self.doing_penalty = False
-                            # go forward during 10 seconds
-                            self.action.do_forward(delay=7)
-                        break
-                """
+                        # CHECK GOAL IS NOT MINE
 
-                # TODO IF PANELTY // STOP
+                    else:
+                        motion = self.find_object()
 
-                if self.play_step == 1:
+                # STEP 2-2. ADJUST ANGLE BETWEEN ROBOT, BALL AND GOAL
+                elif self.play_state == PlayState.PS_GOAL_IN_LINE:
 
-                    # STEP 1-1. FIND FIELD
-                    if self.play_state == PlayState.PS_FIELD:
-                        if self.field == True:
-                            self.play_state = PlayState.PS_BALL
+                    offset = rospy.get_param(
+                        '/detector/option/yaw_offset', 7)
 
-                            # INIT HEAD BEFORE NEXT STATE
-                            motion = ['stop', -1, -1, True]
-                        else:
-                            motion = self.find_object()
+                    if self.base_yaw - offset < self.yaw < self.base_yaw + offset:
+                        play.play_state = PlayState.PS_DRIBBLE
+                        play.play_step = 3
+                    else:
+                        diff = self.action.base_yaw - self.action.yaw
+                        if diff < 0 and abs(diff) <= 90:
+                            motion = ['sideLeft', 125, -1]
+                        elif diff > 0 and abs(diff) > 90:
+                            motion = ['sideLeft', 125, -1]
+                        elif diff < 0 and abs(diff) > 90:
+                            motion = ['sideRight', 125, -1]
+                        elif diff > 0 and abs(diff) <= 90:
+                            motion = ['sideRight', 125, -1]
 
-                    # STEP 1-2. FIND BALL
-                    elif self.play_state == PlayState.PS_BALL:
-                        # empty check
-                        if self.BALL is not None:
-                            self.play_state = PlayState.PS_BALL_IN_LINE
+                    # rospy.loginfo('')
 
-                            # INIT HEAD BEFORE NEXT STATE
-                            motion = ['stop', -1, -1, True]
-                        else:
-                            motion = self.find_object()
+            elif self.play_step == 3:
+                # STEP 3-3. ADJUST DISTANCE BETWEEN BALL AND GOAL
+                if self.play_state == PlayState.PS_DRIBBLE:
 
-                    # STEP 1-3. ADJUST ANGLE BETWEEN ROBOT AND BALL
-                    elif self.play_state == PlayState.PS_BALL_IN_LINE:
+                    # GET DISTANCE OF BALL
+                    self.calc_ball_distance_angle()
 
-                        # GET ANGLE AND DISTANCE OF BALL
-                        self.calc_ball_distance_angle()
-
-                        turn = self.ball_in_line()
-
-                        if turn is None:
-                            self.play_state = PlayState.PS_BALL_DISTANCE
-                        elif turn == 'L':
-                            motion = ['turnLeft', 3]
-                        elif turn == 'R':
-                            motion = ['turnRight', 3]
-
-                    # STEP 1-4. ADJUST DISTANCE BETWEEN ROBOT AND BALL
-                    elif self.play_state == PlayState.PS_BALL_DISTANCE:
-
-                        # GET ANGLE AND DISTANCE OF BALL
-                        self.calc_ball_distance_angle()
-
-                        close_distance = rospy.get_param(
-                            '/detector/option/min_to_forward', 150)
-
-                        if self.ball_distance > close_distance:
-                            motion = ['forward', 3]
-                        else:
-                            self.play_state = PlayState.PS_GOAL
-                            self.play_step = 2
-
-                elif self.play_step == 2:
-
-                    # STEP 2-1. FIND GOAL
-                    if self.play_state == PlayState.PS_GOAL:
-
-                        if self.goal is not None:
-                            self.play_state = PlayState.PS_GOAL_IN_LINE
-
-                            if len(self.goal_post) > 1:
-                                self.goal_target = midpoint(
-                                    list(self.goal_post)[0][0], list(self.goal_post)[1][0])
-                            elif len(self.goal_post) > 0:
-                                self.goal_target = list(self.goal_post)[0][0]
-
-                            # CHECK GOAL IS NOT MINE
-
-                        else:
-                            motion = self.find_object()
-
-                    # STEP 2-2. ADJUST ANGLE BETWEEN ROBOT, BALL AND GOAL
-                    elif self.play_state == PlayState.PS_GOAL_IN_LINE:
-
-                        offset = rospy.get_param(
-                            '/detector/option/yaw_offset', 7)
-
-                        if self.base_yaw - offset < self.yaw < self.base_yaw + offset:
-                            play.play_state = PlayState.PS_DRIBBLE
-                            play.play_step = 3
-                        else:
-                            diff = self.action.base_yaw - self.action.yaw
-                            if diff < 0 and abs(diff) <= 90:
-                                motion = ['sideLeft', 125, -1]
-                            elif diff > 0 and abs(diff) > 90:
-                                motion = ['sideLeft', 125, -1]
-                            elif diff < 0 and abs(diff) > 90:
-                                motion = ['sideRight', 125, -1]
-                            elif diff > 0 and abs(diff) <= 90:
-                                motion = ['sideRight', 125, -1]
-
-                        # rospy.loginfo('')
-
-                elif self.play_step == 3:
-                    # STEP 3-3. ADJUST DISTANCE BETWEEN BALL AND GOAL
-                    if self.play_state == PlayState.PS_DRIBBLE:
-
-                        # GET DISTANCE OF BALL
-                        self.calc_ball_distance_angle()
-
-                        if self.ball_distance < 50:
-                            motion = ['leftKick', 1]
-                        else:
-                            motion = ['forward', 3]
-
-            # STATE_FINISHED
-            if self.game_state == GameState.STATE_FINISHED:
-                """
-                self.mode = GameState.STATE_FINISHED
-                self.did_ready = False
-                self.doing_ready = False
-                self.action.do_stop()
-                """
-                rospy.loginfo('')
-
-            if motion is not None:
-
-                base_ud = self.motion[13]
-
-                # CALL TO MOTION CONTROLLER
-                if motion[0] == 'stop':
-                    self.motion = motion_control_client(
-                        motion[0], head_lr=motion[1], head_ud=motion[2], head_init=motion[3])
-                elif motion[0] == 'sideLeft':
-                    self.motion = motion_control_client(
-                        motion[0], head_lr=motion[1], head_ud=motion[2], head_init=False)
-                elif motion[0] == 'sideRight':
-                    self.motion = motion_control_client(
-                        motion[0], head_lr=motion[1], head_ud=motion[2], head_init=False)
-                else:
-                    self.motion = motion_control_client(
-                        motion[0], duration=motion[1], head_init=False)
-
-                # TODO CHANGE HEAD UP_DOWN , dynamic reconfigure VALUE ADJUST
-
-            # 1 CALLBACK, 1 LOOP, ONLY ONE RUN
-            self.is_running = False
+                    if self.ball_distance < 50:
+                        motion = ['leftKick', 1]
+                    else:
+                        motion = ['forward', 3]
 
     def find_object(self):
-
         # STEP1. FIND LEFT/RIGHT
         # 0 - 20 - 40 - 60 - 80 - 100 - 120 - 140 - 160 - 180 - 200 -220 - 240
         # self.find_side = [0-12]
@@ -584,39 +494,69 @@ class StateController(object):
 
         return ['stop', -1, -1, True]
 
-    def calc_ball_distance_angle(self):
-
-        if self.ball is None:
+    def head_move_to_find_ball(self):
+        """Move head to find the ball"""
+        if self.ball is not None or self.last_data is None:
             return
-        if self.cv_image is None:
+
+        next_head_up_down = self.last_data[zstt_constants.HEAD_UP_DOWN]
+        next_head_left_right = self.last_data[zstt_constants.HEAD_LEFT_RIGHT]
+        next_head_left_right += 60 * self.move_left_right
+
+        # motion = 'head_move' if self.action.is_stop else 'stop'
+        motion = 'stop'
+        self.last_command = motion
+        # robot see right side
+        if next_head_left_right < 5:
+            self.last_data = motion_control_client(motion, 0.5, head_ud=next_head_up_down, head_lr=124)
+            self.move_left_right = 1
+        # robot see left side
+        elif next_head_left_right > 245:
+            self.last_data = motion_control_client(motion, 0.5, head_ud=next_head_up_down, head_lr=126)
+            self.move_left_right = -1
+
+        # robot see center, again
+        # (125: first search, 124: before robot need to head move up/down)
+        elif self.last_data[zstt_constants.HEAD_LEFT_RIGHT] == 126:
+            if self.last_data[zstt_constants.HEAD_UP_DOWN] == 160:
+                next_head_up_down = 140
+            elif self.last_data[zstt_constants.HEAD_UP_DOWN]== 140:
+                next_head_up_down = 120
+            elif self.last_data[zstt_constants.HEAD_UP_DOWN] == 120:
+                next_head_up_down = 160
+            elif self.last_data[zstt_constants.HEAD_UP_DOWN] == 90:
+                next_head_up_down = 160
+
+            self.last_data = motion_control_client(motion, 0.5, head_ud=next_head_up_down, head_lr=125)
+        else:
+            self.last_data = motion_control_client(motion, 0.5, head_ud=next_head_up_down, head_lr=next_head_left_right)
+
+    def calc_ball_distance_angle(self):
+        if self.ball is None or self.cv_image is None or self.last_data is None:
             return
 
         self.ball_distance = -1
         self.ball_angle = 0
 
-        angle = floor(self.motion[13]/10) * 10
+        # angle = floor(self.motion[13]/10) * 10
 
         # 90 100 110 120
-        distance_info = DISTANCE.get(angle)
-
+        distance_info = DISTANCE.get(self.last_data[zstt_constants.HEAD_UP_DOWN])
         for idx in range(1, len(distance_info)):
             if distance_info[idx][0] > self.ball[0][1]:
                 y_diff = abs(distance_info[idx - 1][0] - distance_info[idx][0])
                 d_diff = abs(distance_info[idx - 1][1] - distance_info[idx][1])
                 ball_distance = distance_info[idx][1]
-                ball_distance += (d_diff / y_diff) * \
-                    (distance_info[idx][0] - self.ball[0][1])
+                ball_distance += (d_diff / y_diff) * (distance_info[idx][0] - self.ball[0][1])
                 self.ball_distance = int(ball_distance)
                 break
         # GET ANGLE BETWEEN BALL AND ROBOT (angle < 0: left side, angle > 0: right side)
         self.ball_angle = angle_between_three_points(self.ball[0],
-                                                     (int(
-                                                         self.cv_image.shape[1] / 2), self.cv_image.shape[0]),
+                                                     (int(self.cv_image.shape[1] / 2), self.cv_image.shape[0]),
                                                      (self.cv_image.shape[1] / 2, 0))
 
         # BALL UNDER 1CM (EX. LEG DETECTED BY BALL)
         if self.ball_distance < 0:
-            self.ball = None
             self.ball_distance = -1
             self.ball_angle = 0
 
@@ -656,7 +596,6 @@ def motion_control_client(motion, duration=0, head_lr=-1, head_ud=-1, head_init=
 
 
 def main():
-
     rospy.init_node('state_controller', anonymous=False)
 
     # STATE CONTROL START
