@@ -18,6 +18,7 @@ class ObjectDetector(object):
 
         self.cv_image = None
         self.lab_image = None
+        self.view_image = None
 
         self.field = None
         self.field_mask = None
@@ -77,16 +78,16 @@ class ObjectDetector(object):
         self.find_goal()
 
         #TODO SEND TOPIC : MERGE IMAGE (CONTOUR DISPLAY)
-        view_image = self.cv_image.copy()
 
-        #if self.field is not None:
-        #    view_image = cv2.bitwise_and(view_image, view_image, mask=self.field)
+        if self.field is not None:
+            if self.ball is not None:
+                cv2.circle(self.view_image, self.ball[0], self.ball[1], (255, 255, 0), 2)
+            #if self.goal is not None:
+            # TODO
+            
+            # TEST
+            cv2.imshow('view_image', self.view_image)
 
-        #if self.ball is not None:
-        #    cv2.circle(view_image, self.ball[0], self.ball[1], (255, 255, 0), 2)
-
-        # TEST
-        # cv2.imshow('view_image', view_image)
 
         cv2.waitKey(3)
 
@@ -140,9 +141,10 @@ class ObjectDetector(object):
 
                     # SET MASK IMAGE FOR FINDING BALL
                     self.field_mask = cv2.bitwise_and(self.lab_image.copy(), field_mask)
+                    self.view_image = cv2.bitwise_and(self.cv_image.copy(), field_mask)
 
                     # TEST
-                    cv2.imshow('FIELD', self.field_mask)
+                    # cv2.imshow('FIELD', self.field_mask)
                     # cv2.imshow('FIELD', cv2.bitwise_and(self.cv_image.copy(), field_mask))
 
                     self.field_pub.publish(True)
@@ -183,7 +185,7 @@ class ObjectDetector(object):
         b_image = cv2.bitwise_and(image, image, mask=b_mask)
 
         # TEST
-        cv2.imshow('BALL', b_image)
+        # cv2.imshow('BALL', b_image)
 
         # bilateralFilter Parameters
         d = rospy.get_param('/detector/option/filter_d', 9)
@@ -250,7 +252,7 @@ class ObjectDetector(object):
         g_mask = cv2.inRange(self.field_mask.copy(), lower, upper)
 
         # TEST
-        cv2.imshow('GOAL', cv2.bitwise_and(self.cv_image, self.cv_image, mask=g_mask))
+        # cv2.imshow('GOAL', cv2.bitwise_and(self.cv_image, self.cv_image, mask=g_mask))
 
         ##### STEP 4-3. FIND FILED CONTOUR AND REMOVE TOO SMALL OR TOO BIG
         contours = cv2.findContours(g_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
