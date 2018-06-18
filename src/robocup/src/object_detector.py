@@ -10,6 +10,30 @@ from numpy.linalg import norm
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, Float32MultiArray, Int32MultiArray, String
 
+GREEN_BGR = (0, 255, 0)
+YELLOW_BGR = (0, 255, 255)
+RED_BGR = (0, 0, 255)
+BLUE_BGR = (255, 0, 0)
+BLACK_BGR = (0, 0, 0)
+WHITE_BGR = (255, 255, 255)
+DISABLED_BGR = (221, 221, 221)
+ENABLED_BGR = (0, 255, 255)
+
+# TODO: using dynamic parameters
+# Minimum and Maximum radius of ball
+BALL_RADIUS = {
+    'min': {
+        120: 5,
+        140: 20,
+        160: 30
+    },
+    'max': {
+        120: 30,
+        140: 50,
+        160: 70
+    }
+}
+
 
 class ObjectDetector(object):
 
@@ -83,7 +107,7 @@ class ObjectDetector(object):
         self.find_field()
 
         # STEP 3. FIND BALL OBJECT
-        # self.find_ball()
+        self.find_ball()
 
         # STEP 4. FIND GOAL OBJECT
         # self.find_goal()
@@ -157,11 +181,12 @@ class ObjectDetector(object):
 
         # SETP 2-5. FILL BLACK COLOR TO NON-FIELD AREA
         self.field_mask = np.zeros(self.lab_image.shape, dtype=np.uint8)
-        cv2.fillPoly(self.field_mask, [self.field], (255,) * self.lab_image.shape[2])
+        cv2.fillPoly(self.field_mask, [self.field],
+                     (255,) * self.lab_image.shape[2])
 
         # draw field outline
         if self.view_output:
-            cv2.polylines(self.view_image, [self.field], True, (0, 255, 0), 4)
+            cv2.polylines(self.view_image, [self.field], True, GREEN_BGR, 4)
 
         # TEST
         # cv2.imshow('FIELD', self.field_mask)
@@ -169,91 +194,81 @@ class ObjectDetector(object):
 
         self.field_pub.publish(True)
 
-    def find_ball(self):
-
+    def find_ball(self, head_up_down=120):
         obj_ball = Int32MultiArray()
 
-        # STEP 3-1. CHECK FIELD AREA
-        if self.field_mask is None:
-            #rospy.loginfo("***** NO FIELD *****")
+        def return_fail():
+            self.ball = None
             self.ball_pub.publish(obj_ball)
             return
 
-        f_image = self.field_mask.copy()
+        # STEP 3-1. CHECK FIELD AREA
+        if self.cv_image is None or self.field_mask is None:
+            return return_fail()
 
-        # STEP 3-2. GET MASK VALUE & SET MASK
-        w_lower = np.array(self.ball_white_lab['lower'])
-        w_upper = np.array(self.ball_white_lab['upper'])
-        white_mask = cv2.inRange(f_image, w_lower, w_upper)
+        # SET MASK IMAGE FOR FINDING BALL
+        field_image = cv2.bitwise_and(self.cv_image.copy(), self.field_mask)
 
-        b_lower = np.array(self.ball_black_lab['lower'])
-        b_upper = np.array(self.ball_black_lab['upper'])
-        black_mask = cv2.inRange(f_image, b_lower, b_upper)
-
-        b_mask = cv2.bitwise_or(white_mask, black_mask)
-        b_mask = cv2.erode(b_mask, None, iterations=2)
-        b_mask = cv2.dilate(b_mask, None, iterations=2)
-
-        # TEST
-        # cv2.imshow('TEST', b_mask)
-
-        image = self.cv_image.copy()
-
-        # STEP 3-3. SET MASK TO FIELD LAB_IMAGE
-        b_image = cv2.bitwise_and(image, image, mask=b_mask)
-
-        # TEST
-        # cv2.imshow('BALL', b_image)
+        # STEP 3-2. BLUR BEFORE HOUGH CIRCLE
 
         # bilateralFilter Parameters
         d = rospy.get_param('/detector/option/filter_d', 9)
         color = rospy.get_param('/detector/option/filter_color', 75)
         space = rospy.get_param('/detector/option/filter_space', 75)
 
-        # STEP 3-4. SET BLUR AND PARAMETERS
-
         # image, d, sigmaColor, sigmaSpace
-        gray = cv2.bilateralFilter(b_image, d, color, space)
+        blurred = cv2.bilateralFilter(field_image, d, color, space)
+        gray = cv2.bilateralFilter(blurred, d, color, space)
         gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
         gray = cv2.dilate(gray, None, iterations=2)
         gray = cv2.erode(gray, None, iterations=2)
 
+        # HOUGH CIRCLE
         # DYNAMIC RECONFIGURE PARAMETER
         hc = self.hough_circle
-
         # image, method, dp, minDist, param1, param2, minRadius, maxRadius
+        # TODO: using dynamic parameters
         circles = cv2.HoughCircles(image=gray, method=cv2.HOUGH_GRADIENT,
-                                   dp=hc['dp'], minDist=hc['min_d'], param1=hc['p1'], param2=hc['p2'], minRadius=hc['min_r'], maxRadius=hc['max_r'])
-
-        ball = None
+                                   dp=hc['dp'],
+                                   minDist=hc['min_d'],
+                                   param1=hc['p1'],
+                                   param2=hc['p2'],
+                                   minRadius=BALL_RADIUS['min'][head_up_down],
+                                   maxRadius=BALL_RADIUS['max'][head_up_down])
 
         if circles is None:
-            #rospy.loginfo("***** NO CIRCLE *****")
-            self.ball_pub.publish(obj_ball)
+            rospy.logdebug("***** NO CIRCLE *****")
+            return return_fail()
         else:
             # CHANGE CIRCLE DATA'S ORDER
             circles = [((circle[0], circle[1]), circle[2])
                        for circle in circles[0]]
 
-            # FIND BALL
-            ball = get_ball_from_circles(circles)
+        # FIND BALL
+        ball = get_ball_from_circles(circles, head_up_down)
 
         if ball is None:
-            #rospy.loginfo("***** NO BALL *****")
-            self.ball = None
-            self.ball_pub.publish(obj_ball)
-
+            rospy.logdebug("***** NO BALL *****")
+            return return_fail()
         else:
             self.ball = ball_to_int(ball)
 
-            (x, y), radius = self.ball
+        (x, y), radius = self.ball
+        obj_ball.data = [x, y, radius]
 
-            obj_ball.data = [x, y, radius]
+        # draw ball outline
+        if self.view_output:
+            # draw the outer circle
+            cv2.circle(self.view_image,
+                       self.ball[0], self.ball[1], YELLOW_BGR, 2)
 
-            # rospy.loginfo(ball)
-            # rospy.loginfo(obj_ball)
+            # draw the center of the circle
+            cv2.circle(self.view_image, self.ball[0], 2, RED_BGR, 3)
+            cv2.putText(self.view_image, '{}'.format(self.ball[1]),
+                        (self.ball[0][0] - 15, self.ball[0][1] - 10),
+                        cv2.FONT_HERSHEY_TRIPLEX, 0.6, BLUE_BGR)
 
-            self.ball_pub.publish(obj_ball)
+        self.ball_pub.publish(obj_ball)
 
     def find_goal(self):
 
@@ -499,30 +514,24 @@ def get_center_from_contour(contour):
         return None, False
 
 
-def get_ball_from_circles(circles):
-    """
-    FIND BALL FROM CIRCLE LIST
-    """
+def get_ball_from_circles(circles, head_up_down):
+    """FIND BALL FROM CIRCLE LIST"""
     if circles is None:
         return None
 
-    min_radius = rospy.get_param('/detector/option/min_ball_radius', 5)
-    max_radius = rospy.get_param('/detector/option/max_ball_radius', 10)
+    # TODO: using dynamic parameters
+    # min_radius = rospy.get_param('/detector/option/min_ball_radius', 5)
+    # max_radius = rospy.get_param('/detector/option/max_ball_radius', 10)
 
     for circle in circles:
-        if min_radius < circle[1] < max_radius:
-            # TODO DISPLAY BALL'S MOVING ?
-            #rospy.loginfo("!!!!! BALL !!!!!")
-            # rospy.loginfo(circle)
+        if BALL_RADIUS['min'][head_up_down] < circle[1] < BALL_RADIUS['max'][head_up_down]:
             return circle
 
     return None
 
 
 def ball_to_int(ball):
-    """
-    CHANGE BALL TO INT FROM FLOAT
-    """
+    """CHANGE BALL TO INT FROM FLOAT"""
     if ball is None:
         return None
 
