@@ -20,7 +20,7 @@ Key is head_up_down degree.
 Value is (y pixel, distance) tuples
 """
 DISTANCE = {
-  90 : [(480, 0)],
+  90: [(480, 0)],
   100: [(215, 1000),
         (245, 700),
         (280, 500),
@@ -28,18 +28,25 @@ DISTANCE = {
         (360, 300),
         (400, 250),
         (480, 190)],
-  110: [(50, 700),
+  120: [(50, 700),
         (90, 500),
         (120, 400),
         (170, 300),
         (255, 200),
         (320, 150),
         (480, 85)],
-  120: [(20, 240),
+  140: [(20, 240),
         (145, 150),
         (265, 90),
         (355, 60),
-        (480, 30)]
+        (480, 30)],
+  160: [(100, 80),
+        (170, 60),
+        (240, 40),
+        (280, 30),
+        (320, 20),
+        (360, 10),
+        (410, 0)]
 }
 
 class GameState(Enum):
@@ -107,7 +114,7 @@ class StateController(object):
         self.cv_image = None
         self.bridge   = CvBridge()
 
-        self.field_sub = rospy.Subscriber('field_pub', Bool, self.field_callback)
+        self.field_sub = rospy.Subscriber('field_pub', Bool, self.set_state)
         self.ball_sub  = rospy.Subscriber('ball_pub', Int32MultiArray, self.ball_callback)
         self.goal_sub  = rospy.Subscriber('goal_pub', Float32MultiArray, self.goal_callback)
 
@@ -140,10 +147,9 @@ class StateController(object):
         # 12 13 HEAD_LEFT_RIGHT / HEAD_UP_DOWN
         self.motion = []
 
+        self.is_running = False;
         self.get_ready = False;
-
-        # START STATE CONTROLL
-        self.set_state()
+        
 
     def sensor_callback(self, value):
 
@@ -206,9 +212,14 @@ class StateController(object):
             self.goal = None
         
         
-    def set_state(self):
+    def set_state(self, msg):
 
-        while True:
+        if self.is_running == True:
+            return
+        else:
+            self.is_running == True
+
+        while is_running:
 
             # INITIALIZE VARIABLE IN ALL LOOP
             motion = None
@@ -464,6 +475,9 @@ class StateController(object):
                     self.motion = motion_control_client(motion[0], duration = motion[1], head_init = False)
 
                 # TODO CHANGE HEAD UP_DOWN , dynamic reconfigure VALUE ADJUST
+
+            # 1 CALLBACK, 1 LOOP, ONLY ONE RUN
+            self.is_running = False
 
     def find_object(self):
 
