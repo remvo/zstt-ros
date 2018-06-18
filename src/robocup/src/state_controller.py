@@ -1,140 +1,150 @@
 #!/usr/bin/env python
 import sys
-from zstt.srv import MotionControl
-
 from enum import Enum
 from math import floor
+
 import rospy
-from std_msgs.msg import String, UInt8, Int32, Bool, Int32MultiArray, Float32MultiArray
-from sensor_msgs.msg import Image
-from object_detector import angle_between_three_points, midpoint
 from cv_bridge import CvBridge, CvBridgeError
-from gamecontroller_msgs.msg import GameState as GameStateMsg, Header, Data, TeamInfo, RobotInfo
-
+from gamecontroller_msgs.msg import GameState as GameStateMsg
+from gamecontroller_msgs.msg import Data, Header, RobotInfo, TeamInfo
+from sensor_msgs.msg import Image
+from std_msgs.msg import (Bool, Float32MultiArray, Int32, Int32MultiArray,
+                          String, UInt8)
 from zstt import *
+from zstt.srv import MotionControl
 
-#TODO SET DISTANCE 
+from object_detector import angle_between_three_points, midpoint
+
+# TODO SET DISTANCE
 """
 Distance info.
 Key is head_up_down degree.
 Value is (y pixel, distance) tuples
 """
 DISTANCE = {
-  90: [(480, 0)],
-  100: [(215, 1000),
-        (245, 700),
-        (280, 500),
-        (310, 400),
-        (360, 300),
-        (400, 250),
-        (480, 190)],
-  120: [(50, 700),
-        (90, 500),
-        (120, 400),
-        (170, 300),
-        (255, 200),
-        (320, 150),
-        (480, 85)],
-  140: [(20, 240),
-        (145, 150),
-        (265, 90),
-        (355, 60),
-        (480, 30)],
-  160: [(100, 80),
-        (170, 60),
-        (240, 40),
-        (280, 30),
-        (320, 20),
-        (360, 10),
-        (410, 0)]
+    90: [(480, 0)],
+    100: [(215, 1000),
+          (245, 700),
+          (280, 500),
+          (310, 400),
+          (360, 300),
+          (400, 250),
+          (480, 190)],
+    120: [(50, 700),
+          (90, 500),
+          (120, 400),
+          (170, 300),
+          (255, 200),
+          (320, 150),
+          (480, 85)],
+    140: [(20, 240),
+          (145, 150),
+          (265, 90),
+          (355, 60),
+          (480, 30)],
+    160: [(100, 80),
+          (170, 60),
+          (240, 40),
+          (280, 30),
+          (320, 20),
+          (360, 10),
+          (410, 0)]
 }
 
+
 class GameState(Enum):
-    STATE_INITIAL  = 0
-    STATE_READY    = 1
-    STATE_SET      = 2
-    STATE_PLAYING  = 3
+    STATE_INITIAL = 0
+    STATE_READY = 1
+    STATE_SET = 2
+    STATE_PLAYING = 3
     STATE_FINISHED = 4
 
+
 class SecondaryState(Enum):
-    STATE_NORMAL            = 0
-    STATE_PENALTYSHOOT      = 1
-    STATE_OVERTIME          = 2
-    STATE_TIMEOUT           = 3
-    STATE_DIRECT_FREEKICK   = 4
+    STATE_NORMAL = 0
+    STATE_PENALTYSHOOT = 1
+    STATE_OVERTIME = 2
+    STATE_TIMEOUT = 3
+    STATE_DIRECT_FREEKICK = 4
     STATE_INDIRECT_FREEKICK = 5
-    STATE_PENALTYKICK       = 6
-    DROPBALL                = 128
-    UNKNOWN                 = 255
+    STATE_PENALTYKICK = 6
+    DROPBALL = 128
+    UNKNOWN = 255
+
 
 class PlayState(Enum):
-    PS_FIELD         = 0
-    PS_BALL          = 1
-    PS_BALL_IN_LINE  = 2
+    PS_FIELD = 0
+    PS_BALL = 1
+    PS_BALL_IN_LINE = 2
     PS_BALL_DISTANCE = 3
-    PS_GOAL          = 4
-    PS_GOAL_IN_LINE  = 5
-    PS_DRIBBLE       = 6
+    PS_GOAL = 4
+    PS_GOAL_IN_LINE = 5
+    PS_DRIBBLE = 6
+
 
 class Penalties(Enum):
-    NONE       = 0
+    NONE = 0
     SUBSTITUTE = 14  # TODO check if different for SPL than HL and what value is
-    MANUAL     = 15  # TODO check if different for SPL than HL and what value is
+    MANUAL = 15  # TODO check if different for SPL than HL and what value is
 
-    HL_BALL_MANIPULATION   = 30
-    HL_PHYSICAL_CONTACT    = 31
-    HL_ILLEGAL_ATTACK      = 32
-    HL_ILLEGAL_DEFENSE     = 33
+    HL_BALL_MANIPULATION = 30
+    HL_PHYSICAL_CONTACT = 31
+    HL_ILLEGAL_ATTACK = 32
+    HL_ILLEGAL_DEFENSE = 33
     HL_PICKUP_OR_INCAPABLE = 34
-    HL_SERVICE             = 35
+    HL_SERVICE = 35
+
 
 class StateController(object):
 
     def __init__(self):
 
+        self.game_sub = rospy.Subscriber(
+            '/robocup/gamecontroller_msgs', Int32, self.game_callback)
 
-        self.game_sub  = rospy.Subscriber('/robocup/gamecontroller_msgs', Int32, self.game_callback)
-
-        self.game_state   = -1
+        self.game_state = -1
         self.second_state = -1
-        self.play_state   = -1
-        self.play_step    = -1
+        self.play_state = -1
+        self.play_step = -1
 
-        self.sensor_sub  = rospy.Subscriber('/dataMsg', UInt8, self.sensor_callback)
+        self.sensor_sub = rospy.Subscriber(
+            '/dataMsg', UInt8, self.sensor_callback)
         self.sensor_count = 0
 
-        self.yaw   = -1
+        self.yaw = -1
         self.pitch = 0
-        self.roll  = 0
+        self.roll = 0
 
-        self.base_yaw   = -1
+        self.base_yaw = -1
         self.target_yaw = -1
 
-        self.cv_sub   = rospy.Subscriber('image_raw', Image, self.cv_callback)
+        self.cv_sub = rospy.Subscriber('image_raw', Image, self.cv_callback)
         self.cv_image = None
-        self.bridge   = CvBridge()
+        self.bridge = CvBridge()
 
         self.field_sub = rospy.Subscriber('field_pub', Bool, self.set_state)
-        self.ball_sub  = rospy.Subscriber('ball_pub', Int32MultiArray, self.ball_callback)
-        self.goal_sub  = rospy.Subscriber('goal_pub', Float32MultiArray, self.goal_callback)
+        self.ball_sub = rospy.Subscriber(
+            'ball_pub', Int32MultiArray, self.ball_callback)
+        self.goal_sub = rospy.Subscriber(
+            'goal_pub', Float32MultiArray, self.goal_callback)
 
         self.field = None
-        
-        self.ball          = None
+
+        self.ball = None
         self.ball_distance = -1
-        self.ball_angle    = 0
+        self.ball_angle = 0
 
-        self.goal          = None
-        self.goal_target   = None
+        self.goal = None
+        self.goal_target = None
 
-        #TODO GET ANGLE TERM FROM RECONFIURE
+        # TODO GET ANGLE TERM FROM RECONFIURE
         # 0 - 20 - 40 - 60 - 80 - 100 - 120 - 140 - 160 - 180 - 200 -220 - 240
-        self.find_side     = [0]*13
+        self.find_side = [0]*13
 
-        # 90 - 100 - 110 - 120 
-        self.find_updown   = [0]*4
+        # 90 - 100 - 110 - 120
+        self.find_updown = [0]*4
 
-        self.turn_count    = 0
+        self.turn_count = 0
 
         # CURRENT ROBOT MOTION : GET BY RETURN FROM MOTION CONTROLLER
         # 0     SELECT_MODE
@@ -147,9 +157,8 @@ class StateController(object):
         # 12 13 HEAD_LEFT_RIGHT / HEAD_UP_DOWN
         self.motion = []
 
-        self.is_running = False;
-        self.get_ready = False;
-        
+        self.is_running = False
+        self.get_ready = False
 
     def sensor_callback(self, value):
 
@@ -159,7 +168,7 @@ class StateController(object):
             self.sensor_count = 1
             self.yaw = value
 
-            if self.base_yaw == -1 :
+            if self.base_yaw == -1:
                 self.base_yaw = value
 
         elif sensor_count == 1:
@@ -173,7 +182,8 @@ class StateController(object):
 
     def cv_callback(self, image):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(image, desired_encoding='passthrough')
+            cv_image = self.bridge.imgmsg_to_cv2(
+                image, desired_encoding='passthrough')
         except CvBridgeError as error:
             rospy.logerr(error)
 
@@ -187,8 +197,8 @@ class StateController(object):
         self.field = msg
 
     def ball_callback(self, msg):
-        
-        #rospy.loginfo(msg)
+
+        # rospy.loginfo(msg)
 
         if len(msg.data) != 0:
             self.ball = ((msg.data[0], msg.data[1]), msg.data[2])
@@ -198,8 +208,8 @@ class StateController(object):
             self.ball = None
 
     def goal_callback(self, msg):
-        
-        #rospy.loginfo(msg)
+
+        # rospy.loginfo(msg)
 
         if len(msg.data) != 0:
             if len(msg.data) > 2:
@@ -210,8 +220,7 @@ class StateController(object):
             rospy.loginfo(self.goal)
         else:
             self.goal = None
-        
-        
+
     def set_state(self, msg):
 
         if self.is_running == True:
@@ -260,9 +269,8 @@ class StateController(object):
                 """
 
                 # INITIALIZE VARIABLE FOR PLAYING
-                self.play_step    = 1
-                self.play_state   = PlayState.PS_FIELD
-
+                self.play_step = 1
+                self.play_state = PlayState.PS_FIELD
 
             # STATE_READY : START FROM SIDE AND MOVE TO CENTER
             if self.game_state == GameState.STATE_READY:
@@ -283,13 +291,11 @@ class StateController(object):
                     self.doing_ready = False if rc else False
                 """
 
-                
                 if self.get_ready == False:
-                   self.get_ready = True
+                    self.get_ready = True
 
-                   # TODO CHECK WALKING TIME
-                   motion = ['forward', 22]
-
+                    # TODO CHECK WALKING TIME
+                    motion = ['forward', 22]
 
             # STATE_SET : FIND BALL USING HEAD MOVING ONLY
             if self.game_state == GameState.STATE_SET:
@@ -345,7 +351,7 @@ class StateController(object):
                         break
                 """
 
-                # TODO IF PANELTY // STOP 
+                # TODO IF PANELTY // STOP
 
                 if self.play_step == 1:
 
@@ -380,9 +386,9 @@ class StateController(object):
 
                         if turn is None:
                             self.play_state = PlayState.PS_BALL_DISTANCE
-                        elif turn == 'L' :
+                        elif turn == 'L':
                             motion = ['turnLeft', 3]
-                        elif turn == 'R' :
+                        elif turn == 'R':
                             motion = ['turnRight', 3]
 
                     # STEP 1-4. ADJUST DISTANCE BETWEEN ROBOT AND BALL
@@ -391,7 +397,8 @@ class StateController(object):
                         # GET ANGLE AND DISTANCE OF BALL
                         self.calc_ball_distance_angle()
 
-                        close_distance = rospy.get_param('/detector/option/min_to_forward', 150)
+                        close_distance = rospy.get_param(
+                            '/detector/option/min_to_forward', 150)
 
                         if self.ball_distance > close_distance:
                             motion = ['forward', 3]
@@ -408,7 +415,8 @@ class StateController(object):
                             self.play_state = PlayState.PS_GOAL_IN_LINE
 
                             if len(self.goal_post) > 1:
-                                self.goal_target = midpoint(list(self.goal_post)[0][0], list(self.goal_post)[1][0])
+                                self.goal_target = midpoint(
+                                    list(self.goal_post)[0][0], list(self.goal_post)[1][0])
                             elif len(self.goal_post) > 0:
                                 self.goal_target = list(self.goal_post)[0][0]
 
@@ -420,7 +428,8 @@ class StateController(object):
                     # STEP 2-2. ADJUST ANGLE BETWEEN ROBOT, BALL AND GOAL
                     elif self.play_state == PlayState.PS_GOAL_IN_LINE:
 
-                        offset = rospy.get_param('/detector/option/yaw_offset', 7)
+                        offset = rospy.get_param(
+                            '/detector/option/yaw_offset', 7)
 
                         if self.base_yaw - offset < self.yaw < self.base_yaw + offset:
                             play.play_state = PlayState.PS_DRIBBLE
@@ -466,13 +475,17 @@ class StateController(object):
 
                 # CALL TO MOTION CONTROLLER
                 if motion[0] == 'stop':
-                    self.motion = motion_control_client(motion[0], head_lr = motion[1], head_ud = motion[2], head_init = motion[3])
+                    self.motion = motion_control_client(
+                        motion[0], head_lr=motion[1], head_ud=motion[2], head_init=motion[3])
                 elif motion[0] == 'sideLeft':
-                    self.motion = motion_control_client(motion[0], head_lr = motion[1], head_ud = motion[2], head_init = False)
+                    self.motion = motion_control_client(
+                        motion[0], head_lr=motion[1], head_ud=motion[2], head_init=False)
                 elif motion[0] == 'sideRight':
-                    self.motion = motion_control_client(motion[0], head_lr = motion[1], head_ud = motion[2], head_init = False)
+                    self.motion = motion_control_client(
+                        motion[0], head_lr=motion[1], head_ud=motion[2], head_init=False)
                 else:
-                    self.motion = motion_control_client(motion[0], duration = motion[1], head_init = False)
+                    self.motion = motion_control_client(
+                        motion[0], duration=motion[1], head_init=False)
 
                 # TODO CHANGE HEAD UP_DOWN , dynamic reconfigure VALUE ADJUST
 
@@ -502,9 +515,9 @@ class StateController(object):
             for i in (idx-1, -1, -1):
                 if self.find_side[i] == 0:
                     if angle - (20*(idx-1-i)) < 0:
-                       angle = 0
+                        angle = 0
                     else:
-                       angle = angle - (20*(idx-1-i))
+                        angle = angle - (20*(idx-1-i))
                     return ['stop', angle, -1, False]
 
         # FIND RIGHT SIDE
@@ -512,13 +525,13 @@ class StateController(object):
             for i in (idx+1, 13):
                 if self.find_side[i] == 0:
                     if angle + (20*(i-idx-1)) > 240:
-                       angle = 240
+                        angle = 240
                     else:
-                       angle = angle + (20*(i-idx-1))
+                        angle = angle + (20*(i-idx-1))
                     return ['stop', angle, -1, False]
 
         # STEP2. FIND UP DOWN
-        # 90 - 100 - 110 - 120 
+        # 90 - 100 - 110 - 120
         # self.find_updown = [0-3]
 
         # INIT LEFT_RIGHT MAP
@@ -532,15 +545,15 @@ class StateController(object):
 
         # 13 HEAD_UP_DOWN
         angle = self.motion[13]
-        
+
         # FIND DOWN
         if idx > 0:
             for i in (idx-1, -1, -1):
                 if self.find_updown[i] == 0:
                     if angle - (10*(idx-1-i)) < 0:
-                       angle = 0
+                        angle = 0
                     else:
-                       angle = angle - (10*(idx-1-i))
+                        angle = angle - (10*(idx-1-i))
                     return ['stop', -1, angle, False]
 
         # FIND UP
@@ -548,9 +561,9 @@ class StateController(object):
             for i in (idx+1, 13):
                 if self.find_updown[i] == 0:
                     if angle + (10*(i-idx-1)) > 120:
-                       angle = 120
+                        angle = 120
                     else:
-                       angle = angle + (20*(i-idx-1))
+                        angle = angle + (20*(i-idx-1))
                     return ['stop', -1, angle, False]
 
         # STEP3. FIND IN OTHER ANGLE
@@ -560,7 +573,7 @@ class StateController(object):
         self.find_updown = [0]*4
 
         # TURN LEFT / MAXIMUM 6 TIMES
-        if self.turn_count == 6 :
+        if self.turn_count == 6:
             # TODO WAIT FEW SECONDS
             self.turn_count = 0
             return ['stop', -1, -1, True]
@@ -568,7 +581,7 @@ class StateController(object):
             # TODO TURN SECOND SETTING
             self.turn_count += 1
             return ['turnLeft', 3]
-        
+
         return ['stop', -1, -1, True]
 
     def calc_ball_distance_angle(self):
@@ -591,12 +604,14 @@ class StateController(object):
                 y_diff = abs(distance_info[idx - 1][0] - distance_info[idx][0])
                 d_diff = abs(distance_info[idx - 1][1] - distance_info[idx][1])
                 ball_distance = distance_info[idx][1]
-                ball_distance += (d_diff / y_diff) * (distance_info[idx][0] - self.ball[0][1])
+                ball_distance += (d_diff / y_diff) * \
+                    (distance_info[idx][0] - self.ball[0][1])
                 self.ball_distance = int(ball_distance)
                 break
         # GET ANGLE BETWEEN BALL AND ROBOT (angle < 0: left side, angle > 0: right side)
         self.ball_angle = angle_between_three_points(self.ball[0],
-                                                     (int(self.cv_image.shape[1] / 2), self.cv_image.shape[0]),
+                                                     (int(
+                                                         self.cv_image.shape[1] / 2), self.cv_image.shape[0]),
                                                      (self.cv_image.shape[1] / 2, 0))
 
         # BALL UNDER 1CM (EX. LEG DETECTED BY BALL)
@@ -627,6 +642,7 @@ class StateController(object):
 
         return turn
 
+
 def motion_control_client(motion, duration=0, head_lr=-1, head_ud=-1, head_init=False):
 
     rospy.wait_for_service('motion_control')
@@ -637,6 +653,7 @@ def motion_control_client(motion, duration=0, head_lr=-1, head_ud=-1, head_init=
         return resp1.data
     except rospy.ServiceException, e:
         rospy.logerr('Service call failed: %s' % e)
+
 
 def main():
 
@@ -649,6 +666,7 @@ def main():
         rospy.spin()
     except KeyboardInterrupt:
         rospy.loginfo('Shutting down')
+
 
 if __name__ == '__main__':
     main()

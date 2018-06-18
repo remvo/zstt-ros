@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 import math
-import numpy as np
-import cv2
-import rospy
 from math import hypot
-from numpy.linalg import norm
-from cv_bridge import CvBridge, CvBridgeError
-from std_msgs.msg import String, Bool, Int32MultiArray, Float32MultiArray
-from sensor_msgs.msg import Image
 
+import cv2
+import numpy as np
+import rospy
+from cv_bridge import CvBridge, CvBridgeError
+from numpy.linalg import norm
+from sensor_msgs.msg import Image
+from std_msgs.msg import Bool, Float32MultiArray, Int32MultiArray, String
 
 
 class ObjectDetector(object):
@@ -29,35 +29,37 @@ class ObjectDetector(object):
         self.lab_sub = rospy.Subscriber('image_lab', Image, self.lab_callback)
 
         self.field_pub = rospy.Publisher('field_pub', Bool)
-        self.ball_pub  = rospy.Publisher('ball_pub', Int32MultiArray)
-        self.goal_pub  = rospy.Publisher('goal_pub', Float32MultiArray)
+        self.ball_pub = rospy.Publisher('ball_pub', Int32MultiArray)
+        self.goal_pub = rospy.Publisher('goal_pub', Float32MultiArray)
 
         # INIT MASK COLORS
-        self.field_lab = {'upper': [],'lower': []}
-        self.ball_white_lab = {'upper': [],'lower': []}
-        self.ball_black_lab = {'upper': [],'lower': []}
-        self.goal_lab = {'upper': [],'lower': []}
+        self.field_lab = {'upper': [], 'lower': []}
+        self.ball_white_lab = {'upper': [], 'lower': []}
+        self.ball_black_lab = {'upper': [], 'lower': []}
+        self.goal_lab = {'upper': [], 'lower': []}
 
         # INIT HOUGH CIRCLE OPTIONS
         self.hough_circle = {}
 
     def cv_callback(self, image_message):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(image_message, desired_encoding='passthrough')
+            cv_image = self.bridge.imgmsg_to_cv2(
+                image_message, desired_encoding='passthrough')
         except CvBridgeError as error:
             rospy.logerr(error)
 
         self.cv_image = cv_image
 
-        #cv2.waitKey(3)
+        # cv2.waitKey(3)
 
     def lab_callback(self, image_message):
         try:
-            lab_image = self.bridge.imgmsg_to_cv2(image_message, desired_encoding='passthrough')
+            lab_image = self.bridge.imgmsg_to_cv2(
+                image_message, desired_encoding='passthrough')
         except CvBridgeError as error:
             rospy.logerr(error)
 
-        #TODO MOVE BLUR TO CONVERT
+        # TODO MOVE BLUR TO CONVERT
 
         # DYNAMIC RECONFIGURE _ BLUR AMOUNT
         blur = rospy.get_param('/detector/option/blur', 5)
@@ -65,39 +67,39 @@ class ObjectDetector(object):
         # SAVE LAB IMAGE WITH BLUR
         self.lab_image = cv2.GaussianBlur(lab_image.copy(), (blur, blur), 0)
 
-        ##### STEP 1. GET MASK COLOR FROM DYNAMIC RECONFIGURE SETTING
+        # STEP 1. GET MASK COLOR FROM DYNAMIC RECONFIGURE SETTING
         self.dynamic_setting()
 
-        ##### STEP 2. FIND FIELD OBJECT
+        # STEP 2. FIND FIELD OBJECT
         self.find_field()
-        
-        ##### STEP 3. FIND BALL OBJECT
+
+        # STEP 3. FIND BALL OBJECT
         self.find_ball()
 
-        ##### STEP 4. FIND GOAL OBJECT
+        # STEP 4. FIND GOAL OBJECT
         self.find_goal()
 
-        #TODO SEND TOPIC : MERGE IMAGE (CONTOUR DISPLAY)
+        # TODO SEND TOPIC : MERGE IMAGE (CONTOUR DISPLAY)
 
         if self.field is not None:
             if self.ball is not None:
-                cv2.circle(self.view_image, self.ball[0], self.ball[1], (255, 255, 0), 2)
-            #if self.goal is not None:
+                cv2.circle(self.view_image,
+                           self.ball[0], self.ball[1], (255, 255, 0), 2)
+            # if self.goal is not None:
             # TODO
-            
+
             # TEST
             cv2.imshow('view_image', self.view_image)
-
 
         cv2.waitKey(3)
 
     def find_field(self):
 
-        ##### STEP 2-1. GET MASK VALUE
+        # STEP 2-1. GET MASK VALUE
         lower = np.array(self.field_lab['lower'])
         upper = np.array(self.field_lab['upper'])
 
-        ##### STEP 2-2. SET MASK TO LAB_IMAGE 
+        # STEP 2-2. SET MASK TO LAB_IMAGE
         # construct a mask for the color between lower and upper, then perform
         # a series of dilations and erosions to remove any small blobs left in the mask
         f_mask = cv2.inRange(self.lab_image.copy(), lower, upper)
@@ -107,10 +109,11 @@ class ObjectDetector(object):
         # TEST
         # cv2.imshow('TEST', cv2.bitwise_and(self.cv_image, self.cv_image, mask=f_mask))
 
-        ##### STEP 2-3. FIND FILED CONTOUR
+        # STEP 2-3. FIND FILED CONTOUR
         # find contours in the mask and initialize the current center of the field
         # we need to using copy, because findContours function modify the input image
-        contour = cv2.findContours(f_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        contour = cv2.findContours(
+            f_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
         try:
             # only proceed if at least one contour was found
@@ -120,14 +123,14 @@ class ObjectDetector(object):
             else:
                 min_field = rospy.get_param('/detector/option/min_field', 100)
 
-                ##### STEP 2-4. MERGE CONTOUR AND FIND LARGEST ONE
+                # STEP 2-4. MERGE CONTOUR AND FIND LARGEST ONE
 
                 # merge closed contours
                 contour = merge_contours(contour)
 
                 # return the largest contour in the mask
                 max_contour = max(contour, key=cv2.contourArea)
-                
+
                 if cv2.contourArea(max_contour) < min_field:
                     self.field_mask = None
                     self.field_pub.publish(False)
@@ -136,12 +139,15 @@ class ObjectDetector(object):
 
                     field_mask = np.zeros(self.lab_image.shape, dtype=np.uint8)
 
-                    ##### SETP 2-5. FILL BLACK COLOR TO NON-FIELD AREA
-                    cv2.fillPoly(field_mask, [self.field], (255,) * self.lab_image.shape[2])
+                    # SETP 2-5. FILL BLACK COLOR TO NON-FIELD AREA
+                    cv2.fillPoly(field_mask, [self.field],
+                                 (255,) * self.lab_image.shape[2])
 
                     # SET MASK IMAGE FOR FINDING BALL
-                    self.field_mask = cv2.bitwise_and(self.lab_image.copy(), field_mask)
-                    self.view_image = cv2.bitwise_and(self.cv_image.copy(), field_mask)
+                    self.field_mask = cv2.bitwise_and(
+                        self.lab_image.copy(), field_mask)
+                    self.view_image = cv2.bitwise_and(
+                        self.cv_image.copy(), field_mask)
 
                     # TEST
                     # cv2.imshow('FIELD', self.field_mask)
@@ -150,20 +156,20 @@ class ObjectDetector(object):
                     self.field_pub.publish(True)
         except CvBridgeError as error:
             rospy.logerr(e)
-    
+
     def find_ball(self):
 
         obj_ball = Int32MultiArray()
 
-        ##### STEP 3-1. CHECK FIELD AREA
+        # STEP 3-1. CHECK FIELD AREA
         if self.field_mask is None:
             #rospy.loginfo("***** NO FIELD *****")
             self.ball_pub.publish(obj_ball)
             return
-        
+
         f_image = self.field_mask.copy()
 
-        ##### STEP 3-2. GET MASK VALUE & SET MASK
+        # STEP 3-2. GET MASK VALUE & SET MASK
         w_lower = np.array(self.ball_white_lab['lower'])
         w_upper = np.array(self.ball_white_lab['upper'])
         white_mask = cv2.inRange(f_image, w_lower, w_upper)
@@ -175,13 +181,13 @@ class ObjectDetector(object):
         b_mask = cv2.bitwise_or(white_mask, black_mask)
         b_mask = cv2.erode(b_mask, None, iterations=2)
         b_mask = cv2.dilate(b_mask, None, iterations=2)
-        
+
         # TEST
         # cv2.imshow('TEST', b_mask)
 
         image = self.cv_image.copy()
 
-        ##### STEP 3-3. SET MASK TO FIELD LAB_IMAGE 
+        # STEP 3-3. SET MASK TO FIELD LAB_IMAGE
         b_image = cv2.bitwise_and(image, image, mask=b_mask)
 
         # TEST
@@ -192,7 +198,7 @@ class ObjectDetector(object):
         color = rospy.get_param('/detector/option/filter_color', 75)
         space = rospy.get_param('/detector/option/filter_space', 75)
 
-        ##### STEP 3-4. SET BLUR AND PARAMETERS
+        # STEP 3-4. SET BLUR AND PARAMETERS
 
         # image, d, sigmaColor, sigmaSpace
         gray = cv2.bilateralFilter(b_image, d, color, space)
@@ -204,7 +210,8 @@ class ObjectDetector(object):
         hc = self.hough_circle
 
         # image, method, dp, minDist, param1, param2, minRadius, maxRadius
-        circles = cv2.HoughCircles(image = gray, method=cv2.HOUGH_GRADIENT, dp=hc['dp'], minDist=hc['min_d'], param1=hc['p1'], param2=hc['p2'], minRadius=hc['min_r'], maxRadius=hc['max_r'])
+        circles = cv2.HoughCircles(image=gray, method=cv2.HOUGH_GRADIENT,
+                                   dp=hc['dp'], minDist=hc['min_d'], param1=hc['p1'], param2=hc['p2'], minRadius=hc['min_r'], maxRadius=hc['max_r'])
 
         ball = None
 
@@ -213,11 +220,11 @@ class ObjectDetector(object):
             self.ball_pub.publish(obj_ball)
         else:
             # CHANGE CIRCLE DATA'S ORDER
-            circles = [((circle[0], circle[1]), circle[2]) for circle in circles[0]]
-            
+            circles = [((circle[0], circle[1]), circle[2])
+                       for circle in circles[0]]
+
             # FIND BALL
             ball = get_ball_from_circles(circles)
-
 
         if ball is None:
             #rospy.loginfo("***** NO BALL *****")
@@ -228,11 +235,11 @@ class ObjectDetector(object):
             self.ball = ball_to_int(ball)
 
             (x, y), radius = self.ball
-            
+
             obj_ball.data = [x, y, radius]
 
-            #rospy.loginfo(ball)
-            #rospy.loginfo(obj_ball)
+            # rospy.loginfo(ball)
+            # rospy.loginfo(obj_ball)
 
             self.ball_pub.publish(obj_ball)
 
@@ -240,13 +247,13 @@ class ObjectDetector(object):
 
         obj_goal = Float32MultiArray()
 
-        ##### STEP 4-1. CHECK FIELD AREA
+        # STEP 4-1. CHECK FIELD AREA
         if self.field_mask is None:
             #rospy.loginfo("***** NO FIELD *****")
             self.goal_pub.publish(obj_goal)
             return
 
-        ##### STEP 4-2. SET MASK TO LAB_IMAGE 
+        # STEP 4-2. SET MASK TO LAB_IMAGE
         lower = np.array(self.goal_lab['lower'])
         upper = np.array(self.goal_lab['upper'])
         g_mask = cv2.inRange(self.field_mask.copy(), lower, upper)
@@ -254,57 +261,62 @@ class ObjectDetector(object):
         # TEST
         # cv2.imshow('GOAL', cv2.bitwise_and(self.cv_image, self.cv_image, mask=g_mask))
 
-        ##### STEP 4-3. FIND FILED CONTOUR AND REMOVE TOO SMALL OR TOO BIG
-        contours = cv2.findContours(g_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        # STEP 4-3. FIND FILED CONTOUR AND REMOVE TOO SMALL OR TOO BIG
+        contours = cv2.findContours(
+            g_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
         min_goal = rospy.get_param('/detector/option/min_goal', 100)
         max_goal = rospy.get_param('/detector/option/max_goal', 200)
 
         contours = [contour for contour in contours
-                      if min_goal < cv2.contourArea(contour) < max_goal]
+                    if min_goal < cv2.contourArea(contour) < max_goal]
 
         if len(contours) <= 0:
-            #rospy.loginfo("##### NO GOAL POST #####")
+            # rospy.loginfo("##### NO GOAL POST #####")
             self.goal_pub.publish(obj_goal)
         else:
             goal_post = set()
 
-            thres_goal_dist = rospy.get_param('/detector/option/thres_goal_distance', 50)
-            thres_goal_angle = rospy.get_param('/detector/option/thres_goal_angle', 30)
+            thres_goal_dist = rospy.get_param(
+                '/detector/option/thres_goal_distance', 50)
+            thres_goal_angle = rospy.get_param(
+                '/detector/option/thres_goal_angle', 30)
 
             image = self.field_mask.copy()
             field = self.field
-                
+
             for i in range(len(field)):
                 p1 = field[i][0]
                 p2 = field[(i + 1) % len(field)][0]
                 p3 = field[(i + 2) % len(field)][0]
-                    
+
                 angle = angle_between_three_points(p1, p2, p3)
-                    
+
                 # if the three points on single line, calculate distance between line and goal post candidates
                 if abs(180 - angle) < thres_goal_angle:
                     for contour in contours:
                         M = cv2.moments(contour)
-                        center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
-                            
+                        center = (int(M["m10"] / M["m00"]),
+                                  int(M["m01"] / M["m00"]))
+
                         if center[1] > image.shape[0] / 2:
                             continue
 
-                        dist = int(norm(np.cross(p2 - p1, p1 - center)) / norm(p2 - p1))
+                        dist = int(
+                            norm(np.cross(p2 - p1, p1 - center)) / norm(p2 - p1))
 
                         if dist < thres_goal_dist:
                             goal_post.add((center, cv2.contourArea(contour)))
 
                 if len(goal_post) == 2:
-                    #rospy.loginfo(goal_post)
+                    # rospy.loginfo(goal_post)
                     #(x1, y1), point1 = goal_post[0]
                     #(x2, y2), point2 = goal_post[1]
                     #obj_goal.data = [x1, y1, point1, x2, y2, point2]
                     break
 
             if len(goal_post) > 0:
-                (x1, y1), point1 = goal_post[0] 
+                (x1, y1), point1 = goal_post[0]
                 obj_goal.data[0], obj_goal.data[1], obj_goal.data[2] = x1, y1, point1
 
             if len(goal_post) > 1:
@@ -312,7 +324,7 @@ class ObjectDetector(object):
                 obj_goal.data[3], obj_goal.data[4], obj_goal.data[5] = x2, y2, point2
 
             #rospy.loginfo("%%%%% GOAL POST %%%%%")
-            #rospy.loginfo(obj_goal)
+            # rospy.loginfo(obj_goal)
 
             self.goal_pub.publish(obj_goal)
 
@@ -330,7 +342,6 @@ class ObjectDetector(object):
             rospy.get_param('/detector/field_color/upper_A', 125),
             rospy.get_param('/detector/field_color/upper_B', 215)
         ]
-        
 
         # BALL WHITE MASK LOWER
         self.ball_white_lab['lower'] = [
@@ -370,17 +381,17 @@ class ObjectDetector(object):
         self.goal_lab['upper'] = [
             rospy.get_param('/detector/goal_color/upper_L', 255),
             rospy.get_param('/detector/goal_color/upper_A', 170),
-            rospy.get_param('/detector/goal_color/upper_B', 170 )
+            rospy.get_param('/detector/goal_color/upper_B', 170)
         ]
 
         # HOUGH CIRCLE PRAMETER
         self.hough_circle = {
-            'dp'    : rospy.get_param('/detector/option/dp'),
-            'min_d' : rospy.get_param('/detector/option/min_distance'),
-            'p1'    : rospy.get_param('/detector/option/param1'),
-            'p2'    : rospy.get_param('/detector/option/param2'),
-            'min_r' : rospy.get_param('/detector/option/min_radius'),
-            'max_r' : rospy.get_param('/detector/option/max_radius')
+            'dp': rospy.get_param('/detector/option/dp'),
+            'min_d': rospy.get_param('/detector/option/min_distance'),
+            'p1': rospy.get_param('/detector/option/param1'),
+            'p2': rospy.get_param('/detector/option/param2'),
+            'min_r': rospy.get_param('/detector/option/min_radius'),
+            'max_r': rospy.get_param('/detector/option/max_radius')
         }
 
 
@@ -457,7 +468,7 @@ def merge_contours_sub(cnts):
 
             dist = hypot(center1[0] - center2[0], center1[1] - center2[1])
             threshold = (math.sqrt(cv2.contourArea(cnts[i]))
-                            + math.sqrt(cv2.contourArea(cnts[j])))
+                         + math.sqrt(cv2.contourArea(cnts[j])))
             if dist < threshold - merge_field:
                 cnts.append(np.concatenate((cnts[i], cnts[j])))
                 cnts.pop(j)
@@ -474,6 +485,7 @@ def get_center_from_contour(contour):
     except ZeroDivisionError:
         return None, False
 
+
 def get_ball_from_circles(circles):
     """
     FIND BALL FROM CIRCLE LIST
@@ -486,12 +498,13 @@ def get_ball_from_circles(circles):
 
     for circle in circles:
         if min_radius < circle[1] < max_radius:
-            #TODO DISPLAY BALL'S MOVING ?
+            # TODO DISPLAY BALL'S MOVING ?
             #rospy.loginfo("!!!!! BALL !!!!!")
-            #rospy.loginfo(circle)
+            # rospy.loginfo(circle)
             return circle
 
     return None
+
 
 def ball_to_int(ball):
     """
