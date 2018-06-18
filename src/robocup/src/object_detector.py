@@ -25,12 +25,19 @@ class ObjectDetector(object):
 
         self.ball = None
 
+        # ROS Topic Subscribers
         self.cv_sub = rospy.Subscriber('image_raw', Image, self.cv_callback)
         self.lab_sub = rospy.Subscriber('image_lab', Image, self.lab_callback)
 
-        self.field_pub = rospy.Publisher('field_pub', Bool)
-        self.ball_pub = rospy.Publisher('ball_pub', Int32MultiArray)
-        self.goal_pub = rospy.Publisher('goal_pub', Float32MultiArray)
+        # ROS Topic Publishers
+        try:
+            self.field_pub = rospy.Publisher('field_pub', Bool, queue_size=5)
+            self.ball_pub = rospy.Publisher('ball_pub', Int32MultiArray, queue_size=5)
+            self.goal_pub = rospy.Publisher('goal_pub', Float32MultiArray, queue_size=5)
+        except TypeError:
+            self.field_pub = rospy.Publisher('field_pub', Bool)
+            self.ball_pub = rospy.Publisher('ball_pub', Int32MultiArray)
+            self.goal_pub = rospy.Publisher('goal_pub', Float32MultiArray)
 
         # INIT MASK COLORS
         self.field_lab = {'upper': [], 'lower': []}
