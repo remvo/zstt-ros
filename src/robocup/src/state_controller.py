@@ -1,8 +1,11 @@
 #!/usr/bin/env python
+import sys
+from zstt.srv import MotionControl
+
 from enum import Enum
 from math import floor
 import rospy
-from std_msgs.msg import String, Int8, Int32, Bool, Int32MultiArray, Float32MultiArray
+from std_msgs.msg import String, UInt8, Int32, Bool, Int32MultiArray, Float32MultiArray
 from sensor_msgs.msg import Image
 from object_detector import angle_between_three_points, midpoint
 from cv_bridge import CvBridge, CvBridgeError
@@ -90,8 +93,8 @@ class StateController(object):
         self.play_state   = -1
         self.play_step    = -1
 
-        self.sensor_sub  = rospy.Subscriber('/dataMsg', Int8, self.sensor_callback)
-        self.senser_count = 0
+        self.sensor_sub  = rospy.Subscriber('/dataMsg', UInt8, self.sensor_callback)
+        self.sensor_count = 0
 
         self.yaw   = -1
         self.pitch = 0
@@ -149,8 +152,6 @@ class StateController(object):
         elif sensor_count == 0:
             self.sensor_count = 1
             self.yaw = value
-            rospy.loginfo("*** yaw ***" + str(yaw))
-            rospy.loginfo(yaw)
 
             if self.base_yaw == -1 :
                 self.base_yaw = value
@@ -611,6 +612,17 @@ class StateController(object):
             turn = 'R'
 
         return turn
+
+def motion_control_client(motion, duration=0, head_lr=-1, head_ud=-1, head_init=False):
+
+    rospy.wait_for_service('motion_control')
+
+    try:
+        motion_control = rospy.ServiceProxy('motion_control', MotionControl)
+        resp1 = motion_control(motion, duration, head_lr, head_ud, head_init)
+        return resp1.data
+    except rospy.ServiceException, e:
+        rospy.logerr('Service call failed: %s' % e)
 
 def main():
 

@@ -257,8 +257,8 @@ class ObjectDetector(object):
         ##### STEP 4-3. FIND FILED CONTOUR AND REMOVE TOO SMALL OR TOO BIG
         contours = cv2.findContours(g_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
-        min_goal = rospy.get_param('/detector/option/min_goal')
-        max_goal = rospy.get_param('/detector/option/max_goal')
+        min_goal = rospy.get_param('/detector/option/min_goal', 100)
+        max_goal = rospy.get_param('/detector/option/max_goal', 200)
 
         contours = [contour for contour in contours
                       if min_goal < cv2.contourArea(contour) < max_goal]
@@ -269,8 +269,8 @@ class ObjectDetector(object):
         else:
             goal_post = set()
 
-            thres_goal_dist = rospy.get_param('/detector/option/thres_goal_distance')
-            thres_goal_angle = rospy.get_param('/detector/option/thres_goal_angle')
+            thres_goal_dist = rospy.get_param('/detector/option/thres_goal_distance', 50)
+            thres_goal_angle = rospy.get_param('/detector/option/thres_goal_angle', 30)
 
             image = self.field_mask.copy()
             field = self.field
@@ -319,58 +319,58 @@ class ObjectDetector(object):
     def dynamic_setting(self):
         # FIELD MASK LOWER
         self.field_lab['lower'] = [
-            rospy.get_param('/detector/field_color/lower_L'),
-            rospy.get_param('/detector/field_color/lower_A'),
-            rospy.get_param('/detector/field_color/lower_B')
+            rospy.get_param('/detector/field_color/lower_L', 74),
+            rospy.get_param('/detector/field_color/lower_A', 61),
+            rospy.get_param('/detector/field_color/lower_B', 88)
         ]
 
         # FIELD MASK UPPER
         self.field_lab['upper'] = [
-            rospy.get_param('/detector/field_color/upper_L'),
-            rospy.get_param('/detector/field_color/upper_A'),
-            rospy.get_param('/detector/field_color/upper_B')
+            rospy.get_param('/detector/field_color/upper_L', 183),
+            rospy.get_param('/detector/field_color/upper_A', 125),
+            rospy.get_param('/detector/field_color/upper_B', 215)
         ]
         
 
         # BALL WHITE MASK LOWER
         self.ball_white_lab['lower'] = [
-            rospy.get_param('/detector/ball_color/w_lower_L', 0),
-            rospy.get_param('/detector/ball_color/w_lower_A', 0),
-            rospy.get_param('/detector/ball_color/w_lower_B', 0)
+            rospy.get_param('/detector/ball_color/w_lower_L', 170),
+            rospy.get_param('/detector/ball_color/w_lower_A', 105),
+            rospy.get_param('/detector/ball_color/w_lower_B', 105)
         ]
 
         # BALL WHITE MASK UPPER
         self.ball_white_lab['upper'] = [
             rospy.get_param('/detector/ball_color/w_upper_L', 255),
-            rospy.get_param('/detector/ball_color/w_upper_A', 255),
-            rospy.get_param('/detector/ball_color/w_upper_B', 255)
+            rospy.get_param('/detector/ball_color/w_upper_A', 170),
+            rospy.get_param('/detector/ball_color/w_upper_B', 170)
         ]
 
         # BALL BLACK MASK LOWER
         self.ball_black_lab['lower'] = [
-            rospy.get_param('/detector/ball_color/b_lower_L', 0),
-            rospy.get_param('/detector/ball_color/b_lower_A', 0),
-            rospy.get_param('/detector/ball_color/b_lower_B', 0)
+            rospy.get_param('/detector/ball_color/b_lower_L', 5),
+            rospy.get_param('/detector/ball_color/b_lower_A', 70),
+            rospy.get_param('/detector/ball_color/b_lower_B', 70)
         ]
 
         # BALL BLACK MASK UPPER
         self.ball_black_lab['upper'] = [
-            rospy.get_param('/detector/ball_color/b_upper_L', 255),
-            rospy.get_param('/detector/ball_color/b_upper_A', 255),
-            rospy.get_param('/detector/ball_color/b_upper_B', 255)
+            rospy.get_param('/detector/ball_color/b_upper_L', 125),
+            rospy.get_param('/detector/ball_color/b_upper_A', 150),
+            rospy.get_param('/detector/ball_color/b_upper_B', 140)
         ]
 
         # GOAL MASK LOWER
         self.goal_lab['lower'] = [
-            rospy.get_param('/detector/goal_color/lower_L', 0),
-            rospy.get_param('/detector/goal_color/lower_A', 0),
-            rospy.get_param('/detector/goal_color/lower_B', 0)
+            rospy.get_param('/detector/goal_color/lower_L', 170),
+            rospy.get_param('/detector/goal_color/lower_A', 105),
+            rospy.get_param('/detector/goal_color/lower_B', 105)
         ]
         # GOAL MASK UPPER
         self.goal_lab['upper'] = [
             rospy.get_param('/detector/goal_color/upper_L', 255),
-            rospy.get_param('/detector/goal_color/upper_A', 255),
-            rospy.get_param('/detector/goal_color/upper_B', 255)
+            rospy.get_param('/detector/goal_color/upper_A', 170),
+            rospy.get_param('/detector/goal_color/upper_B', 170 )
         ]
 
         # HOUGH CIRCLE PRAMETER
@@ -481,8 +481,8 @@ def get_ball_from_circles(circles):
     if circles is None:
         return None
 
-    min_radius = rospy.get_param('/detector/option/min_ball_radius')
-    max_radius = rospy.get_param('/detector/option/max_ball_radius')
+    min_radius = rospy.get_param('/detector/option/min_ball_radius', 5)
+    max_radius = rospy.get_param('/detector/option/max_ball_radius', 10)
 
     for circle in circles:
         if min_radius < circle[1] < max_radius:
