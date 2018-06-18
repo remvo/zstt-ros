@@ -41,8 +41,12 @@ class State2(IntEnum):
     UNKNOWN = 255
 
 class SPLPenalty(IntEnum):
+    NONE = 0
     SUBSTITUTE = 14
+    MANUAL = 15
     BALL_MANIPULATION = 30
     PUSHING = 31
+    ILLEGAL_ATTACK = 32
+    ILLEGAL_DEFENSE = 33
     PICKUP = 34
     SERVICE = 35
