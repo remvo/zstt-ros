@@ -110,19 +110,9 @@ class ObjectDetector(object):
         self.find_ball()
 
         # STEP 4. FIND GOAL OBJECT
-        # self.find_goal()
+        self.find_goal()
 
         # TODO SEND TOPIC : MERGE IMAGE (CONTOUR DISPLAY)
-
-        # if self.field is not None:
-        #     if self.ball is not None:
-        #         cv2.circle(self.view_image,
-        #                    self.ball[0], self.ball[1], (255, 255, 0), 2)
-        #     # if self.goal is not None:
-        #     # TODO
-
-        #     # TEST
-        #     cv2.imshow('view_image', self.view_image)
 
         if self.view_output and self.view_image is not None:
             cv2.imshow('VIEW', self.view_image)
@@ -169,7 +159,9 @@ class ObjectDetector(object):
 
         # STEP 2-4. MERGE CONTOUR AND FIND LARGEST ONE
         # merge closed contours
-        contours = merge_contours(contours)
+        min_contour = rospy.get_param('/detector/option/min_contour', 100)
+        merge_area = rospy.get_param('/detector/option/merge_field', 250)
+        contours = merge_contours(contours, min_contour, merge_area)
 
         # return the largest contour in the mask
         max_contour = max(contours, key=cv2.contourArea)
@@ -271,89 +263,82 @@ class ObjectDetector(object):
         self.ball_pub.publish(obj_ball)
 
     def find_goal(self):
-
         obj_goal = Float32MultiArray()
 
-        # STEP 4-1. CHECK FIELD AREA
-        if self.field_mask is None:
-            #rospy.loginfo("***** NO FIELD *****")
+        def return_fail():
             self.goal_pub.publish(obj_goal)
             return
+
+        # STEP 4-1. CHECK FIELD AREA
+        if self.lab_image is None or self.field_mask is None or self.field is None:
+            rospy.logdebug("***** NO IMAGE or NO FIELD *****")
+            return return_fail()
+
+        field_image = cv2.bitwise_and(self.lab_image.copy(), self.field_mask)
 
         # STEP 4-2. SET MASK TO LAB_IMAGE
         lower = np.array(self.goal_lab['lower'])
         upper = np.array(self.goal_lab['upper'])
-        g_mask = cv2.inRange(self.field_mask.copy(), lower, upper)
+        g_mask = cv2.inRange(field_image.copy(), lower, upper)
 
         # TEST
-        # cv2.imshow('GOAL', cv2.bitwise_and(self.cv_image, self.cv_image, mask=g_mask))
+        # cv2.imshow('GOAL', cv2.bitwise_and(field_image, field_image, mask=g_mask))
 
         # STEP 4-3. FIND FILED CONTOUR AND REMOVE TOO SMALL OR TOO BIG
-        contours = cv2.findContours(
-            g_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        contours = cv2.findContours(g_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
         min_goal = rospy.get_param('/detector/option/min_goal', 100)
         max_goal = rospy.get_param('/detector/option/max_goal', 200)
-
         contours = [contour for contour in contours
                     if min_goal < cv2.contourArea(contour) < max_goal]
 
         if len(contours) <= 0:
-            # rospy.loginfo("##### NO GOAL POST #####")
+            rospy.logdebug("***** NO GOAL POST *****")
             self.goal_pub.publish(obj_goal)
-        else:
-            goal_post = set()
+            return return_fail()
 
-            thres_goal_dist = rospy.get_param(
-                '/detector/option/thres_goal_distance', 50)
-            thres_goal_angle = rospy.get_param(
-                '/detector/option/thres_goal_angle', 30)
+        goal_post = set()
+        goal_post_contours = []
+        thres_goal_dist = rospy.get_param('/detector/option/thres_goal_distance', 50)
+        thres_goal_angle = rospy.get_param('/detector/option/thres_goal_angle', 30)
 
-            image = self.field_mask.copy()
-            field = self.field
+        image = field_image
+        field = self.field
+        for i in range(len(field)):
+            p1 = field[i][0]
+            p2 = field[(i + 1) % len(field)][0]
+            p3 = field[(i + 2) % len(field)][0]
 
-            for i in range(len(field)):
-                p1 = field[i][0]
-                p2 = field[(i + 1) % len(field)][0]
-                p3 = field[(i + 2) % len(field)][0]
+            angle = angle_between_three_points(p1, p2, p3)
 
-                angle = angle_between_three_points(p1, p2, p3)
+            # if the three points on single line, calculate distance between line and goal post candidates
+            if abs(180 - angle) < thres_goal_angle:
+                for contour in contours:
+                    M = cv2.moments(contour)
+                    center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
 
-                # if the three points on single line, calculate distance between line and goal post candidates
-                if abs(180 - angle) < thres_goal_angle:
-                    for contour in contours:
-                        M = cv2.moments(contour)
-                        center = (int(M["m10"] / M["m00"]),
-                                  int(M["m01"] / M["m00"]))
+                    if center[1] > image.shape[0] / 2:
+                        continue
 
-                        if center[1] > image.shape[0] / 2:
-                            continue
+                    dist = int(norm(np.cross(p2 - p1, p1 - center)) / norm(p2 - p1))
 
-                        dist = int(
-                            norm(np.cross(p2 - p1, p1 - center)) / norm(p2 - p1))
-
-                        if dist < thres_goal_dist:
-                            goal_post.add((center, cv2.contourArea(contour)))
+                    if dist < thres_goal_dist:
+                        goal_post.add((center, cv2.contourArea(contour)))
+                        goal_post_contours.append(contour)
 
                 if len(goal_post) == 2:
-                    # rospy.loginfo(goal_post)
-                    #(x1, y1), point1 = goal_post[0]
-                    #(x2, y2), point2 = goal_post[1]
-                    #obj_goal.data = [x1, y1, point1, x2, y2, point2]
                     break
 
-            if len(goal_post) > 0:
-                (x1, y1), point1 = goal_post[0]
-                obj_goal.data[0], obj_goal.data[1], obj_goal.data[2] = x1, y1, point1
+        for goal in goal_post:
+            (x, y), point = goal
+            obj_goal.data += [x, y, point]
 
-            if len(goal_post) > 1:
-                (x2, y2), point2 = goal_post[1]
-                obj_goal.data[3], obj_goal.data[4], obj_goal.data[5] = x2, y2, point2
+        # draw field outline
+        if self.view_output:
+            for contour in goal_post_contours:
+                cv2.polylines(self.view_image, [contour], True, BLUE_BGR, 4)
 
-            #rospy.loginfo("%%%%% GOAL POST %%%%%")
-            # rospy.loginfo(obj_goal)
-
-            self.goal_pub.publish(obj_goal)
+        self.goal_pub.publish(obj_goal)
 
     def dynamic_setting(self):
         # FIELD MASK LOWER
@@ -450,7 +435,7 @@ def distance(point1, point2):
     return int(hypot(point1[0] - point2[0], point1[1] - point2[1]))
 
 
-def merge_contours(cnts):
+def merge_contours(cnts, min_contour=100, merge_area=250):
     """
     Merge closed contours
       param   cnts : contour list
@@ -458,22 +443,18 @@ def merge_contours(cnts):
     """
 
     while True:
-        cnts, merged = merge_contours_sub(cnts)
+        cnts, merged = merge_contours_sub(cnts, min_contour, merge_area)
         if merged is False:
             return cnts
 
 
-def merge_contours_sub(cnts):
+def merge_contours_sub(cnts, min_contour, merge_area):
     """
     Merge closed contours
     If two contours are merged successfully, we return immediately (merge performed only once).
       param  cnts : contour list
       return merged list, merged or not
     """
-
-    min_contour = rospy.get_param('/detector/option/min_contour', 100)
-    merge_field = rospy.get_param('/detector/option/merge_field', 250)
-
     for i in range(len(cnts) - 1):
 
         # if the contour is not sufficiently large, ignore it
@@ -496,7 +477,7 @@ def merge_contours_sub(cnts):
             dist = hypot(center1[0] - center2[0], center1[1] - center2[1])
             threshold = (math.sqrt(cv2.contourArea(cnts[i]))
                          + math.sqrt(cv2.contourArea(cnts[j])))
-            if dist < threshold - merge_field:
+            if dist < threshold - merge_area:
                 cnts.append(np.concatenate((cnts[i], cnts[j])))
                 cnts.pop(j)
                 cnts.pop(i)
